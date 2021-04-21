@@ -5,16 +5,16 @@ sealed trait Context[Extract, Suspended[_]] {
 }
 
 trait Coroutine[A]:
-  type Output[_]
+  type Output
 
   type Extract
   type Suspended[_]
 
-  protected def process(sm: SM): Output[A]
+  protected def process(sm: SM): Output
 
   final type C = scala.continuations.Context[Extract, Suspended]
 
-  final def run(comp: C ?=> A): Output[A] = ??? // marker call
+  final def run(comp: C ?=> A): Output = ??? // marker call
 
   abstract class SM:
     opaque type State = Int

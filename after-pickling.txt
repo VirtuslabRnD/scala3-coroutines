@@ -1,0 +1,349 @@
+<package <empty>.type {
+  <import 
+    <<scala:scala>@tests/run/continuations.scala<7..12>.collection:scala.collection>@
+      tests/run/continuations.scala<7..23>
+  .*:<import>.type>@tests/run/continuations.scala<0..25>
+  <import 
+    <<scala:scala>@tests/run/continuations.scala<33..38>.continuations:scala.continuations>@
+      tests/run/continuations.scala<33..52>
+  .*:<import>.type>@tests/run/continuations.scala<26..54>
+  final lazy module val continuations$package: continuations$package$@tests/run/continuations.scala<796..796> = 
+    <
+      <
+        <new continuations$package$@tests/run/continuations.scala<796..796>:continuations$package$>@
+          tests/run/continuations.scala<796..796>
+      :((): continuations$package$)>@tests/run/continuations.scala<796..796>
+    ():continuations$package$>@tests/run/continuations.scala<796..796>
+  @tests/run/continuations.scala<796..796>@@(continuations$package=tests/run/continuations.scala:<796..796>)
+  @<
+    <
+      <new scala.annotation.internal.SourceFile:scala.annotation.internal.SourceFile>@
+        tests/run/continuations.scala<no position>
+    :((path: scala.Predef.String): scala.annotation.internal.SourceFile)>@tests/run/continuations.scala<no position>
+  (
+    <"tests/run/continuations.scala":("tests/run/continuations.scala" : String)>@
+      tests/run/continuations.scala<no position>
+  ):scala.annotation.internal.SourceFile>@tests/run/continuations.scala<no position> final module class 
+    continuations$package$
+  () extends <
+    <<new Object:Object>@tests/run/continuations.scala<796..796>:((): Object)>@tests/run/continuations.scala<796..796>
+  ():Object>@tests/run/continuations.scala<796..796> { 
+    this: 
+      <continuations$package:continuations$package$>@tests/run/continuations.scala<796..796>.type@
+        tests/run/continuations.scala<796..796>
+     =>
+    private def writeReplace(): scala.AnyRef = 
+      <
+        <
+          <new scala.runtime.ModuleSerializationProxy:scala.runtime.ModuleSerializationProxy>@
+            tests/run/continuations.scala<796..796>
+        :((x$0: Class[?]): scala.runtime.ModuleSerializationProxy)>@tests/run/continuations.scala<796..796>
+      (
+        <classOf[continuations$package.type]:(classOf[continuations$package.type] : Class[continuations$package.type])>@
+          tests/run/continuations.scala<796..796>
+      ):scala.runtime.ModuleSerializationProxy>@tests/run/continuations.scala<796..796>
+    @tests/run/continuations.scala<796..796>@@(writeReplace=tests/run/continuations.scala:<796..796>)
+    def give[
+      T >: scala.Nothing <: scala.Any@tests/run/continuations.scala<805..805>@tests/run/continuations.scala[805..806]
+        @@(T=
+      tests/run/continuations.scala:<805..805>)
+    ](
+      value: T@tests/run/continuations.scala<815..816>@tests/run/continuations.scala[808..816]@@(value=
+        tests/run/continuations.scala:<808..808>
+      )
+    )(using 
+      c: 
+        Lazily@tests/run/continuations.scala<827..833>[T@tests/run/continuations.scala<834..835>]@
+          tests/run/continuations.scala<827..836>
+        #C@tests/run/continuations.scala<827..838>
+      @tests/run/continuations.scala[824..838]@@(c=tests/run/continuations.scala:<824..824>)
+    ): scala.Unit@tests/run/continuations.scala<841..845> = 
+      <
+        <
+          <<c:Lazily[T]#C>@tests/run/continuations.scala<848..849>.suspend:([T <: T](extract: T): scala.Unit)>@
+            tests/run/continuations.scala<848..857>
+        [T]:((extract: T): scala.Unit)>@tests/run/continuations.scala<848..857>
+      (<value:T>@tests/run/continuations.scala<858..863>):scala.Unit>@tests/run/continuations.scala<848..864>
+    @tests/run/continuations.scala[796..800..864]@@(give=tests/run/continuations.scala:<800..800>)
+    extension [
+      L >: scala.Nothing <: scala.Any@tests/run/continuations.scala<1226..1226>@
+        tests/run/continuations.scala[1226..1227]
+      @@(L=tests/run/continuations.scala:<1226..1226>)
+    , 
+      R >: scala.Nothing <: scala.Any@tests/run/continuations.scala<1229..1229>@
+        tests/run/continuations.scala[1229..1230]
+      @@(R=tests/run/continuations.scala:<1229..1229>)
+    ](
+      e: 
+        scala.package.Either@tests/run/continuations.scala<1235..1241>[L@tests/run/continuations.scala<1242..1243>, 
+          R@tests/run/continuations.scala<1245..1246>
+        ]@tests/run/continuations.scala<1235..1247>
+      @tests/run/continuations.scala[1232..1247]@@(e=tests/run/continuations.scala:<1232..1232>)
+    ) def extract[
+      F >: scala.Nothing <: scala.Any@tests/run/continuations.scala<1261..1261>@
+        tests/run/continuations.scala[1261..1262]
+      @@(F=tests/run/continuations.scala:<1261..1261>)
+    ](using 
+      c: 
+        WithEither@tests/run/continuations.scala<1273..1283>[L@tests/run/continuations.scala<1284..1285>, 
+          F@tests/run/continuations.scala<1287..1288>
+        ]@tests/run/continuations.scala<1273..1289>#C@tests/run/continuations.scala<1273..1291>
+      @tests/run/continuations.scala[1270..1291]@@(c=tests/run/continuations.scala:<1270..1270>)
+    ): R@tests/run/continuations.scala<1294..1295> = 
+      <
+        <
+          <<c:WithEither[L, F]#C>@tests/run/continuations.scala<1343..1344>.suspend:
+            ([T <: Either[L, scala.Any]]
+              (extract: T): 
+                T match {
+                  case [l, r] =>> scala.runtime.MatchCase[Either[l, r], r]
+                }
+            )
+          >@tests/run/continuations.scala<1343..1352>
+        [
+          scala.package.Either@tests/run/continuations.scala<1353..1359>[L@tests/run/continuations.scala<1360..1361>, 
+            R@tests/run/continuations.scala<1363..1364>
+          ]@tests/run/continuations.scala<1353..1365>
+        ]:
+          ((extract: Either[L, R]): 
+            Either[L, R] match {
+              case [l, r] =>> scala.runtime.MatchCase[Either[l, r], r]
+            }
+          )
+        >@tests/run/continuations.scala<1343..1366>
+      (<e:Either[L, R]>@tests/run/continuations.scala<1367..1368>):R>@tests/run/continuations.scala<1343..1369>
+    @tests/run/continuations.scala[1249..1253..1369]@@(extract=tests/run/continuations.scala:<1253..1253>)
+    @<
+      <<new scala.main@tests/run/continuations.scala<1372..1376>:scala.main>@tests/run/continuations.scala<1371..1376>:
+        ((): scala.main)
+      >@tests/run/continuations.scala<1371..1376>
+    ():scala.main>@tests/run/continuations.scala<1371..1376> def Test: scala.Unit = 
+      <
+        {
+          val mySeq: Lazily[scala.Int]#Output = 
+            <
+              <
+                <
+                  <
+                    <
+                      <new Lazily@tests/run/continuations.scala<1402..1408>:Lazily>@
+                        tests/run/continuations.scala<1402..1408>
+                    :([T](): Lazily[T])>@tests/run/continuations.scala<1402..1408>
+                  [scala.Int@tests/run/continuations.scala<1409..1412>]:((): Lazily[scala.Int])>@
+                    tests/run/continuations.scala<1402..1413>
+                ():Lazily[scala.Int]>@tests/run/continuations.scala<1402..1413>
+              .run:((comp: (Lazily[scala.Int]#C) ?=> scala.Unit): Lazily[scala.Int]#Output)>@
+                tests/run/continuations.scala<1402..1417>
+            (
+              <
+                {
+                  def $anonfun(using 
+                    evidence$1: Lazily[scala.Int]#C@tests/run/continuations.scala<1418..1418>@@(evidence$1=
+                      tests/run/continuations.scala:<1418..1418>
+                    )
+                  ): scala.Unit = 
+                    <
+                      {
+                        <
+                          <
+                            <
+                              <continuations$package.give:([T](value: T)(using c: Lazily[T]#C): scala.Unit)>@
+                                tests/run/continuations.scala<1424..1428>
+                            [scala.Int]:((value: scala.Int)(using c: Lazily[scala.Int]#C): scala.Unit)>@
+                              tests/run/continuations.scala<1424..1428>
+                          (
+                            <
+                              <<2:(2 : scala.Int)>@tests/run/continuations.scala<1429..1430>.+:
+                                ((x: scala.Int): scala.Int)
+                              >@tests/run/continuations.scala<1429..1431>
+                            (<4:(4 : scala.Int)>@tests/run/continuations.scala<1431..1432>):(6 : scala.Int)>@
+                              tests/run/continuations.scala<1429..1432>
+                          ):((using c: Lazily[scala.Int]#C): scala.Unit)>@tests/run/continuations.scala<1424..1433>
+                        (<evidence$1:Lazily[scala.Int]#C>@tests/run/continuations.scala<1433..1433>):scala.Unit>@
+                          tests/run/continuations.scala<1424..1433>
+                        <
+                          <
+                            <
+                              <
+                                <
+                                  <
+                                    <scala.Predef.intWrapper:((x: scala.Int): scala.runtime.RichInt)>@
+                                      tests/run/continuations.scala<1447..1447>
+                                  (<7:(7 : scala.Int)>@tests/run/continuations.scala<1447..1448>):scala.runtime.RichInt>
+                                    @
+                                  tests/run/continuations.scala<1447..1448>
+                                .to:((end: scala.Int): scala.collection.immutable.Range.Inclusive)>@
+                                  tests/run/continuations.scala<1447..1451>
+                              (<9:(9 : scala.Int)>@tests/run/continuations.scala<1452..1453>):
+                                scala.collection.immutable.Range.Inclusive
+                              >@tests/run/continuations.scala<1447..1453>
+                            .foreach:([U](f: scala.Int => U): scala.Unit)>@tests/run/continuations.scala<1447..1453>
+                          [scala.Unit]:((f: scala.Int => scala.Unit): scala.Unit)>@
+                            tests/run/continuations.scala<1447..1453>
+                        (
+                          <
+                            {
+                              def $anonfun(
+                                x: scala.Int@tests/run/continuations.scala[1442..1443]@@(x=
+                                  tests/run/continuations.scala:<1442..1442>
+                                )
+                              ): scala.Unit = 
+                                <
+                                  <
+                                    <
+                                      <continuations$package.give:([T](value: T)(using c: Lazily[T]#C): scala.Unit)>@
+                                        tests/run/continuations.scala<1457..1461>
+                                    [scala.Int]:((value: scala.Int)(using c: Lazily[scala.Int]#C): scala.Unit)>@
+                                      tests/run/continuations.scala<1457..1461>
+                                  (<x:scala.Int>@tests/run/continuations.scala<1462..1463>):
+                                    ((using c: Lazily[scala.Int]#C): scala.Unit)
+                                  >@tests/run/continuations.scala<1457..1464>
+                                (<evidence$1:Lazily[scala.Int]#C>@tests/run/continuations.scala<1464..1464>):scala.Unit>
+                                  @
+                                tests/run/continuations.scala<1457..1464>
+                              @tests/run/continuations.scala<1442..1464>@@($anonfun=
+                                tests/run/continuations.scala:<1442..1442>
+                              )
+                              <closure(<$anonfun:(x: scala.Int): scala.Unit>@tests/run/continuations.scala<1464..1464>):
+                                scala.Int
+                               => scala.Unit>@tests/run/continuations.scala<1464..1464>
+                            }
+                          :scala.Int => scala.Unit>@tests/run/continuations.scala<1442..1464>
+                        ):scala.Unit>@tests/run/continuations.scala<1438..1464>
+                        <
+                          <
+                            <
+                              <continuations$package.give:([T](value: T)(using c: Lazily[T]#C): scala.Unit)>@
+                                tests/run/continuations.scala<1469..1473>
+                            [scala.Int]:((value: scala.Int)(using c: Lazily[scala.Int]#C): scala.Unit)>@
+                              tests/run/continuations.scala<1469..1473>
+                          (
+                            <
+                              <<10:(10 : scala.Int)>@tests/run/continuations.scala<1474..1476>./:
+                                ((x: scala.Int): scala.Int)
+                              >@tests/run/continuations.scala<1474..1478>
+                            (<0:(0 : scala.Int)>@tests/run/continuations.scala<1479..1480>):scala.Int>@
+                              tests/run/continuations.scala<1474..1480>
+                          ):((using c: Lazily[scala.Int]#C): scala.Unit)>@tests/run/continuations.scala<1469..1481>
+                        (<evidence$1:Lazily[scala.Int]#C>@tests/run/continuations.scala<1481..1481>):scala.Unit>@
+                          tests/run/continuations.scala<1469..1481>
+                      }
+                    :scala.Unit>@tests/run/continuations.scala<1418..1485>
+                  @tests/run/continuations.scala<1418..1485>@@($anonfun=tests/run/continuations.scala:<1418..1418>)
+                  <closure(
+                    <$anonfun:(using evidence$1: Lazily[scala.Int]#C): scala.Unit>@
+                      tests/run/continuations.scala<1485..1485>
+                  ):(Lazily[scala.Int]#C) ?=> scala.Unit>@tests/run/continuations.scala<1485..1485>
+                }
+              :(scala.continuations.Context[scala.Int, [_$1] =>> scala.Unit]) ?=> scala.Unit>@
+                tests/run/continuations.scala<1418..1485>
+            ):Lazily[scala.Int]#Output>@tests/run/continuations.scala<1402..1485>
+          @tests/run/continuations.scala[1390..1394..1485]@@(mySeq=tests/run/continuations.scala:<1394..1394>)
+          <<scala.Predef.println:((x: scala.Any): scala.Unit)>@tests/run/continuations.scala<1488..1495>(
+            <
+              <
+                <
+                  <<mySeq:Lazily[scala.Int]#Output>@tests/run/continuations.scala<1496..1501>.iterator:
+                    (=> Iterator[scala.Int])
+                  >@tests/run/continuations.scala<1496..1510>
+                .take:((n: scala.Int): Iterator[scala.Int])>@tests/run/continuations.scala<1496..1515>
+              (<3:(3 : scala.Int)>@tests/run/continuations.scala<1516..1517>):Iterator[scala.Int]>@
+                tests/run/continuations.scala<1496..1518>
+            .toList:=> List[scala.Int]>@tests/run/continuations.scala<1496..1525>
+          ):scala.Unit>@tests/run/continuations.scala<1488..1526>
+          val myEither: WithEither[scala.Predef.String, scala.Int]#Output = 
+            <
+              <
+                <
+                  <
+                    <
+                      <new WithEither@tests/run/continuations.scala<1545..1555>:WithEither>@
+                        tests/run/continuations.scala<1545..1555>
+                    :([L, R](): WithEither[L, R])>@tests/run/continuations.scala<1545..1555>
+                  [scala.Predef.String@tests/run/continuations.scala<1556..1562>, 
+                    scala.Int@tests/run/continuations.scala<1564..1567>
+                  ]:((): WithEither[scala.Predef.String, scala.Int])>@tests/run/continuations.scala<1545..1568>
+                ():WithEither[scala.Predef.String, scala.Int]>@tests/run/continuations.scala<1545..1568>
+              .run:
+                ((comp: (WithEither[scala.Predef.String, scala.Int]#C) ?=> scala.Int): 
+                  WithEither[scala.Predef.String, scala.Int]#Output
+                )
+              >@tests/run/continuations.scala<1545..1572>
+            (
+              <
+                {
+                  def $anonfun(using 
+                    evidence$2: WithEither[scala.Predef.String, scala.Int]#C@tests/run/continuations.scala<1573..1573>
+                      @@(evidence$2=
+                    tests/run/continuations.scala:<1573..1573>)
+                  ): scala.Int = 
+                    <
+                      {
+                        val y: 
+                          scala.package.Either@tests/run/continuations.scala<1586..1592>[
+                            scala.Predef.String@tests/run/continuations.scala<1593..1599>
+                          , scala.Double@tests/run/continuations.scala<1601..1607>]@
+                            tests/run/continuations.scala<1586..1608>
+                         = 
+                          <
+                            <
+                              <
+                                <scala.package.Right:(=> scala.util.Right.type)>@
+                                  tests/run/continuations.scala<1611..1616>
+                              .apply:([A, B](value: B): Right[A, B])>@tests/run/continuations.scala<1611..1616>
+                            [scala.Nothing, scala.Double]:((value: scala.Double): Right[scala.Nothing, scala.Double])>@
+                              tests/run/continuations.scala<1611..1616>
+                          (<1.0d:(1.0d : scala.Double)>@tests/run/continuations.scala<1617..1620>):
+                            Right[scala.Nothing, scala.Double]
+                          >@tests/run/continuations.scala<1611..1621>
+                        @tests/run/continuations.scala[1579..1583..1621]@@(y=tests/run/continuations.scala:<1583..1583>)
+                        val a: scala.Double@tests/run/continuations.scala<1633..1639> = 
+                          <
+                            <
+                              <
+                                <
+                                  <extract:([L, R](e: Either[L, R]): [F](using c: WithEither[L, F]#C): R)>@
+                                    tests/run/continuations.scala<1644..1651>
+                                [String, scala.Double]:
+                                  ((e: Either[String, scala.Double]): 
+                                    [F](using c: WithEither[String, F]#C): scala.Double
+                                  )
+                                >@tests/run/continuations.scala<1644..1651>
+                              (<y:Either[scala.Predef.String, scala.Double]>@tests/run/continuations.scala<1642..1643>):
+                                ([F](using c: WithEither[String, F]#C): scala.Double)
+                              >@tests/run/continuations.scala<1642..1651>
+                            [scala.Int@tests/run/continuations.scala<1652..1655>]:
+                              ((using c: WithEither[String, scala.Int]#C): scala.Double)
+                            >@tests/run/continuations.scala<1642..1656>
+                          (
+                            <evidence$2:WithEither[scala.Predef.String, scala.Int]#C>@
+                              tests/run/continuations.scala<1656..1656>
+                          ):scala.Double>@tests/run/continuations.scala<1642..1656>
+                        @tests/run/continuations.scala[1626..1630..1656]@@(a=tests/run/continuations.scala:<1630..1630>)
+                        <3:(3 : scala.Int)>@tests/run/continuations.scala<1661..1662>
+                      }
+                    :(3 : scala.Int)>@tests/run/continuations.scala<1573..1666>
+                  @tests/run/continuations.scala<1573..1666>@@($anonfun=tests/run/continuations.scala:<1573..1573>)
+                  <closure(
+                    <$anonfun:(using evidence$2: WithEither[scala.Predef.String, scala.Int]#C): scala.Int>@
+                      tests/run/continuations.scala<1666..1666>
+                  ):(WithEither[scala.Predef.String, scala.Int]#C) ?=> scala.Int>@
+                    tests/run/continuations.scala<1666..1666>
+                }
+              :(
+                scala.continuations.Context[Either[String, scala.Any], 
+                  [X] =>> 
+                    X match {
+                      case [l, r] =>> scala.runtime.MatchCase[Either[l, r], r]
+                    }
+                ]
+              ) ?=> scala.Int>@tests/run/continuations.scala<1573..1666>
+            ):WithEither[scala.Predef.String, scala.Int]#Output>@tests/run/continuations.scala<1545..1666>
+          @tests/run/continuations.scala[1530..1534..1666]@@(myEither=tests/run/continuations.scala:<1534..1534>)
+          <():scala.Unit>@tests/run/continuations.scala<1666..1666>
+        }
+      :scala.Unit>@tests/run/continuations.scala<1390..1666>
+    @tests/run/continuations.scala[1371..1381..1666]@@(Test=tests/run/continuations.scala:<1381..1381>)
+  }
+  @tests/run/continuations.scala<796..1666>@@(continuations$package$=tests/run/continuations.scala:<796..796>)
+}:<empty>.type>@tests/run/continuations.scala<0..1666>

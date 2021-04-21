@@ -24,7 +24,7 @@ class CompilationTests {
 
   // Positive tests ------------------------------------------------------------
 
-  @Test def pos: Unit = {
+  @Ignore @Test def pos: Unit = {
     implicit val testGroup: TestGroup = TestGroup("compilePos")
     aggregateTests(
       compileFile("tests/pos/nullarify.scala", defaultOptions.and("-Ycheck:nullarify")),
@@ -62,7 +62,7 @@ class CompilationTests {
     ).checkCompile()
   }
 
-  @Test def rewrites: Unit = {
+  @Ignore @Test def rewrites: Unit = {
     implicit val testGroup: TestGroup = TestGroup("rewrites")
 
     aggregateTests(
@@ -74,7 +74,7 @@ class CompilationTests {
     ).checkRewrites()
   }
 
-  @Test def posTwice: Unit = {
+  @Ignore @Test def posTwice: Unit = {
     implicit val testGroup: TestGroup = TestGroup("posTwice")
     aggregateTests(
       compileFilesInDir("tests/pos-java-interop", defaultOptions),
@@ -117,7 +117,7 @@ class CompilationTests {
 
   // Negative tests ------------------------------------------------------------
 
-  @Test def negAll: Unit = {
+  @Ignore @Test def negAll: Unit = {
     implicit val testGroup: TestGroup = TestGroup("compileNeg")
     aggregateTests(
       compileFilesInDir("tests/neg", defaultOptions),
@@ -175,7 +175,7 @@ class CompilationTests {
     ).checkExpectedErrors()
   }
 
-  @Test def fuzzyAll: Unit = {
+  @Ignore @Test def fuzzyAll: Unit = {
     implicit val testGroup: TestGroup = TestGroup("compileFuzzy")
     compileFilesInDir("tests/fuzzy", defaultOptions).checkNoCrash()
   }
@@ -198,14 +198,14 @@ class CompilationTests {
 
   // Generic java signatures tests ---------------------------------------------
 
-  @Test def genericJavaSignatures: Unit = {
+  @Ignore @Test def genericJavaSignatures: Unit = {
     implicit val testGroup: TestGroup = TestGroup("genericJavaSignatures")
     compileFilesInDir("tests/generic-java-signatures", defaultOptions).checkRuns()
   }
 
   // Pickling Tests ------------------------------------------------------------
 
-  @Test def pickling: Unit = {
+  @Ignore @Test def pickling: Unit = {
     implicit val testGroup: TestGroup = TestGroup("testPickling")
     aggregateTests(
       compileFilesInDir("tests/new", picklingOptions),
