@@ -29,13 +29,13 @@ class Lazily[T] extends Coroutine[Unit]:
 
   def process(sm: SM): LazySeq[T] = LazySeq(sm)
 
+def give[T](value: T)(using Lazily[T]#C): Unit = summon[Lazily[T]#C].suspend(value)
+
 
 @main def Test =
   val mySeq = Lazily[Int].run {
-    summon[Lazily[Int]#C].suspend(6)
-    summon[Lazily[Int]#C].suspend(7)
-    summon[Lazily[Int]#C].suspend(8)
-    summon[Lazily[Int]#C].suspend(9)
-    summon[Lazily[Int]#C].suspend(10/0)
+    give(2+4)
+    for x <- 7 to 9 do give(x)
+    give(10 / 0)
   }
   println(mySeq.iterator.take(3).toList)
