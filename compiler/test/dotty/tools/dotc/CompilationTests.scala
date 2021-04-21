@@ -2,7 +2,7 @@ package dotty
 package tools
 package dotc
 
-import org.junit.{ Test, BeforeClass, AfterClass }
+import org.junit.{ Test, BeforeClass, AfterClass, Ignore }
 import org.junit.Assert._
 import org.junit.Assume._
 import org.junit.experimental.categories.Category
@@ -218,7 +218,7 @@ class CompilationTests {
    *  bootstrapped, and making sure that TASTY can link against a compiled
    *  version of Dotty, and compiling the compiler using the SemanticDB generation
    */
-  @Test def tastyBootstrap: Unit = {
+  @Ignore @Test def tastyBootstrap: Unit = {
     implicit val testGroup: TestGroup = TestGroup("tastyBootstrap/tests")
     val libGroup = TestGroup("tastyBootstrap/lib")
     val tastyCoreGroup = TestGroup("tastyBootstrap/tastyCore")
