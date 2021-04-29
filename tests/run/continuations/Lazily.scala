@@ -1,19 +1,20 @@
 import scala.collection.*
 import scala.continuations.*
 
-class LazySeq[A](sm: Lazily[A]#SM) extends IterableOnce[A]:
-  private var state: Option[sm.State] = None
+class LazySeq[A](sm: Lazily[A]#Coroutine) extends IterableOnce[A]:
+  private var state: Option[sm.StateId] = None
   private var _next: Option[A] = None
 
   def iterator = new Iterator[A]:
     def hasNext =
+      import sm.State.*
       if _next.nonEmpty then true else
-        val (value, nstate) = state.map(s => sm.resume(s, ())).getOrElse(sm.start())
-        state = Some(nstate)
-        value match
-          case None => false
-          case _ =>
-            _next = value
+        state.map(s => sm.resume(s, ())).getOrElse(sm.start()) match
+          case Failed(e) => throw e
+          case Finished(_) => false
+          case Progressed(v, s) =>
+            state = Some(s)
+            _next = Some(v)
             true
 
     def next() =
@@ -22,11 +23,11 @@ class LazySeq[A](sm: Lazily[A]#SM) extends IterableOnce[A]:
       _next = None
       res
 
-class Lazily[T] extends Coroutine[Unit]:
+class Lazily[T] extends Executor[Unit]:
   type Output = LazySeq[T]
-  type Extract = T
-  type Suspended = [_] =>> Unit
+  type Extract = Unit
+  type Suspended = [_] =>> T
 
-  def process(sm: SM): LazySeq[T] = LazySeq(sm)
+  def process(sm: Coroutine): LazySeq[T] = LazySeq(sm)
 
 def give[T](value: T)(using c: Lazily[T]#C): Unit = c.suspend(value)

@@ -82,6 +82,7 @@ class Compiler {
          new ExplicitSelf,           // Make references to non-trivial self types explicit as casts
          new ElimByName,             // Expand by-name parameter references
          new StringInterpolatorOpt) :: // Optimizes raw and s string interpolators by rewriting them to string concatenations
+    // List(new TransformContinuations) ::
     List(new PruneErasedDefs,        // Drop erased definitions from scopes and simplify erased expressions
          new InlinePatterns,         // Remove placeholders of inlined patterns
          new VCInlineMethods,        // Inlines calls to value class methods
