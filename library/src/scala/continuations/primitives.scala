@@ -17,7 +17,7 @@ trait Executor[A]:
   final def run(comp: C ?=> A): Output = ??? // marker call
 
   abstract class Coroutine:
-    opaque type StateId = Int
+    type StateId = Int
     def start(): State
     def resume(stateId: StateId, t: Extract): State
 

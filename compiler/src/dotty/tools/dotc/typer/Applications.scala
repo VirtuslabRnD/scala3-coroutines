@@ -1049,6 +1049,9 @@ trait Applications extends Compatibility {
 
   def typedTypeApply(tree: untpd.TypeApply, pt: Type)(using Context): Tree = {
     if (ctx.mode.is(Mode.Pattern))
+      println("===================")
+      println(tree)
+      println(tree.show)
       return errorTree(tree, "invalid pattern")
 
     val isNamed = hasNamedArg(tree.args)

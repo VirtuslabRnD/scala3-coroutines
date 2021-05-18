@@ -12,9 +12,10 @@ class WithEither[L, R] extends Executor[R]:
     def handle: sm.State => Either[L, Any] =
       case Finished(answer) => Right(answer)
       case Failed(e) => throw e
-      case Progressed(v, s) => rec(v.map(_ -> s))
+      case p@ Progressed(v, s) =>
+        rec(v.map(_ -> s))
 
     handle(sm.start()).asInstanceOf[Either[L, R]]
 
 
-extension [L, R](e: Either[L, R]) def extract[F](using c: WithEither[L, F]#C): R = c.suspend[R](e)
+extension [L, R](e: Either[L, R]) inline def extract[F](using c: WithEither[L, F]#C): R = c.suspend[R](e)
