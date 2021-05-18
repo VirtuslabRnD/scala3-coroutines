@@ -926,6 +926,14 @@ class Definitions {
 
   @tu lazy val JavaRepeatableAnnot: ClassSymbol = requiredClass("java.lang.annotation.Repeatable")
 
+  @tu lazy val ContinuationContext: ClassSymbol = requiredClass("scala.continuations.Context")
+  @tu lazy val CoroutineExecutor: ClassSymbol = requiredClass("scala.continuations.Executor")
+  @tu lazy val Coroutine: ClassSymbol = CoroutineExecutor.requiredClass("Coroutine")
+  @tu lazy val Coroutine_start: TermSymbol = Coroutine.requiredMethod("start")
+  @tu lazy val Coroutine_resume: TermSymbol = Coroutine.requiredMethod("resume")
+  @tu lazy val CoroutineState: ClassSymbol = Coroutine.requiredClass("State")
+  @tu lazy val CoroutineState_Failed: Symbol = CoroutineState.companionModule.requiredValue("Failed")
+
   // A list of meta-annotations that are relevant for fields and accessors
   @tu lazy val FieldAccessorMetaAnnots: Set[Symbol] =
     Set(FieldMetaAnnot, GetterMetaAnnot, ParamMetaAnnot, SetterMetaAnnot)

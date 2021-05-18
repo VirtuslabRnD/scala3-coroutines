@@ -66,6 +66,7 @@ class Compiler {
          new InlineVals,             // Check right hand-sides of an `inline val`s
          new ExpandSAMs,             // Expand single abstract method closures to anonymous classes
          new init.Checker) ::        // Check initialization of objects
+    List(new Continuations.Transform) ::
     List(new ElimRepeated,           // Rewrite vararg parameters and arguments
          new ProtectedAccessors,     // Add accessors for protected members
          new ExtensionMethods,       // Expand methods of value classes with extension methods
@@ -82,7 +83,6 @@ class Compiler {
          new ExplicitSelf,           // Make references to non-trivial self types explicit as casts
          new ElimByName,             // Expand by-name parameter references
          new StringInterpolatorOpt) :: // Optimizes raw and s string interpolators by rewriting them to string concatenations
-    // List(new TransformContinuations) ::
     List(new PruneErasedDefs,        // Drop erased definitions from scopes and simplify erased expressions
          new InlinePatterns,         // Remove placeholders of inlined patterns
          new VCInlineMethods,        // Inlines calls to value class methods

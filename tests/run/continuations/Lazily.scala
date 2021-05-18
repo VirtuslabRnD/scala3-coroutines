@@ -30,4 +30,4 @@ class Lazily[T] extends Executor[Unit]:
 
   def process(sm: Coroutine): LazySeq[T] = LazySeq(sm)
 
-def give[T](value: T)(using c: Lazily[T]#C): Unit = c.suspend(value)
+inline def give[T](value: T)(using c: Lazily[T]#C): Unit = c.suspend(value)
