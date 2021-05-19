@@ -2,7 +2,7 @@ Coroutines in Scala 3
 =====
 This repo is a fork of scala 3 repo: [original readme](https://github.com/lampepfl/dotty/blob/master/README.md)
 
-This is an ongoing research project with the goal to test the limits of continuation-passing style programming in Scala 3 and check the feasibility of developing libraries that are using coroutines, generators, monadic reflection, and similar constructs.
+This is an ongoing research project with the goal to test the limits of continuation-passing style programming in Scala 3 and check the feasibility of developing libraries that are using coroutines, generators, monadic reflection, and other similar constructs.
 
 Status of the implementation
 ====
@@ -11,6 +11,8 @@ Status of the implementation
 - [ ] Calling one coroutine from the body of the other
 - [x] Inlining one coroutine in the body of the other
 - [ ] Handling of exceptions thrown in coroutine body
+- [ ] Opaque coroutine state
+- [ ] Composition of coroutine of different kind
 #### Syntax elements working correctly inside of coroutines:
 - [x] calls
 - [x] assingments
