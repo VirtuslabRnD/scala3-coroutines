@@ -31,4 +31,6 @@ Status of the implementation
 
 How to try it
 ====
-The project can be compiled and tested in the same way as dotty: [instructions here](https://dotty.epfl.ch/docs/contributing/getting-started.html). Examples of executors definitions and coroutines can be found in [the `continuations` directory of `run` tests](https://github.com/VirtuslabRnD/scala3-coroutines/tree/main/tests/run/continuations). Primitives are located in [the standard library](https://github.com/VirtuslabRnD/scala3-coroutines/blob/main/library/src/scala/continuations/primitives.scala) and they can be imported from anywhere. Executor definitions must be, on the other hand, pasted into the sources or repl.
+The project can be compiled and tested in the same way as dotty: [instructions here](https://dotty.epfl.ch/docs/contributing/getting-started.html). 
+
+Examples of executors definitions and coroutines can be found in [the `continuations` directory of `run` tests](https://github.com/VirtuslabRnD/scala3-coroutines/tree/main/tests/run/continuations). Primitives are located in [the standard library](https://github.com/VirtuslabRnD/scala3-coroutines/blob/main/library/src/scala/continuations/primitives.scala) and they can be imported from anywhere. Executor definitions must be, on the other hand, pasted into the sources or repl.
