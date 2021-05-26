@@ -29,7 +29,8 @@ class A:
     r + 5
   }
 
-  assert(myEither == Left("Some error"))
+  println(myEither)
+  println(myEither2)
 
 def fallible1: Either[String, Double] = Right(1.0)
 def fallible2: Either[String, String] = Left("Some error")
