@@ -48,19 +48,58 @@ object Continuations:
       def makeId(id: Int): Tree = Literal(Constant(id))//.asInstance(stateIdT)
 
       given lifter: LiftState = LiftState(cls)
-      val analysis = analyze(rhs).simplifyOrWrap(lifter.markFinish)
+      val analysis = analyze(rhs).simplifyOrWrap(lifter.markFinish).toCoroutine
       val vars = lifter.symbols.map(s => ValDef(s))
+
+
+      val gotoSym = newSymbol(
+        owner = cls,
+        name = "goto".toTermName,
+        flags = Method | Private | Synthetic,
+        info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), stateIdT :: extractT :: Nil, OrType.make(stateT, stateIdT, false))
+      ).asTerm.entered
+
+      def gotoRhs(argss: List[List[Tree]]): Tree =
+        val idRef = argss(0)(0)
+        val extractRef = argss(0)(1)
+
+        val entry = CaseDef(makeId(0), EmptyTree, analysis.head.toBlock)
+        val states = analysis.body.map { node => CaseDef(makeId(node.id), EmptyTree, (node.init(extractRef) :: node.rest).toBlock) }
+        val fallback = Throw(New(defn.IllegalArgumentExceptionType, Nil))
+        Match(idRef, entry +: states :+ CaseDef(Underscore(idRef.tpe), EmptyTree, fallback))
+      end gotoRhs
+
+      val gotoTree = DefDef(gotoSym, gotoRhs)
+      reown(gotoTree.rhs, gotoSym)
+
+
+      val dispatchSym = newSymbol(
+        owner = cls,
+        name = "dispatch".toTermName,
+        flags = Method | Private | Synthetic,
+        info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), stateIdT :: extractT :: Nil, stateT)
+      ).asTerm.entered
+
+      def dispatchRhs(argss: List[List[Tree]]): Tree =
+        val idRef = argss(0)(0)
+        val extractRef = argss(0)(1)
+
+        val stSym = newSymbol(dispatchSym, "st".toTermName, Case | Synthetic, stateT)
+        val stCase = CaseDef(Bind(stSym, Underscore(stateT)), EmptyTree, ref(stSym))
+        val idSym = newSymbol(dispatchSym, "id".toTermName, Case | Synthetic, stateIdT)
+        val idCase = CaseDef(Bind(idSym, Underscore(stateIdT)), EmptyTree, ref(dispatchSym).appliedTo(ref(idSym), Literal(Constant(null)).asInstance(extractT)))
+        Match(ref(gotoSym).appliedTo(idRef, extractRef), stCase :: idCase :: Nil)
+      end dispatchRhs
+
+      val dispatchTree = DefDef(dispatchSym, dispatchRhs)
+
 
       val startSym = defn.Coroutine_start.copy(
         owner = cls,
         info = MethodType(Nil, Nil, stateT),
         flags = Synthetic | Method | Final | Override
       ).asTerm.entered
-
-      val startRhs = analysis match
-        case tt: Trees => tt.toBlock
-        case c: Coroutine => c.head.toBlock
-      reown(startRhs, startSym)
+      val startRhs = ref(dispatchSym).appliedTo(Literal(Constant(0)), Literal(Constant(null)).asInstance(extractT))
       val startTree = DefDef(startSym, startRhs)
 
       val resumeSym = defn.Coroutine_resume.copy(
@@ -68,23 +107,15 @@ object Continuations:
         info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), stateIdT :: extractT :: Nil, stateT),
         flags = Synthetic | Method | Final | Override
       ).asTerm.entered
-
       def resumeRhs(argss: List[List[Tree]]): Tree =
         val idRef = argss(0)(0)
         val extractRef = argss(0)(1)
-        val states = analysis match
-          case c: Coroutine =>
-            c.body.map { node => CaseDef(makeId(node.id), EmptyTree, (node.init(extractRef) :: node.rest).toBlock) }
-          case _ => Nil
-        val fallback = Throw(New(defn.IllegalArgumentExceptionType, Nil))
-        Match(idRef, states :+ CaseDef(Underscore(idRef.tpe), EmptyTree, fallback))
-
+        ref(dispatchSym).appliedTo(idRef, extractRef)
       val resumeTree = DefDef(resumeSym, resumeRhs)
-      reown(resumeTree.rhs, resumeSym)
 
       val supertype = New(tpe, Nil)
 
-      ClassDefWithParents(cls, constr, supertype::Nil, startTree :: resumeTree :: vars)
+      ClassDefWithParents(cls, constr, supertype::Nil, gotoTree :: dispatchTree :: startTree :: resumeTree :: vars)
     end generateCoroutine
 
     private def reown(block: Tree, newOwner: Symbol)(using Context) =
@@ -176,7 +207,7 @@ object Continuations:
       println("\n\n\t====")
       println(tree.show)
       println(tree)
-      System.exit(-1)
+      // System.exit(-1)
       tree
 
 
@@ -249,3 +280,7 @@ object Continuations:
     private def mapLastNode(f: Node => Node): PreCoroutine = left match
       case l: Coroutine => l.copy(body = l.body.init :+ f(l.body.last))
       case t => t
+
+    private def toCoroutine: Coroutine = left match
+      case l: Coroutine => l
+      case tt: Trees => Coroutine(tt.toList, Nil)
