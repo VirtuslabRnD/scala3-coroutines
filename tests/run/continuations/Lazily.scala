@@ -1,7 +1,7 @@
 import scala.collection.*
 import scala.continuations.*
 
-class LazySeq[A](sm: Lazily[A]#Coroutine) extends IterableOnce[A]:
+class LazySeq[A](sm: Lazily[A]#Coroutine[Unit]) extends IterableOnce[A]:
   private var state: Option[sm.StateId] = None
   private var _next: Option[A] = None
 
@@ -24,10 +24,10 @@ class LazySeq[A](sm: Lazily[A]#Coroutine) extends IterableOnce[A]:
       res
 
 class Lazily[T] extends Executor[Unit]:
-  type Output = LazySeq[T]
+  type Output = [_] =>> LazySeq[T]
   type Extract = Unit
   type Suspended = [_] =>> T
 
-  def process(sm: Coroutine): LazySeq[T] = LazySeq(sm)
+  def process[U <: Unit](sm: Coroutine[U]): LazySeq[T] = LazySeq(sm.asInstanceOf[Lazily[T]#Coroutine[Unit]])
 
 inline def give[T](value: T)(using c: Lazily[T]#C): Unit = c.suspend(value)
