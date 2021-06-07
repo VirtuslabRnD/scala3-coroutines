@@ -5,23 +5,23 @@ sealed trait Context[Extract, Suspended[_]] {
 }
 
 trait Executor[A]:
-  type Output
+  type Output[_]
 
   type Extract
   type Suspended[_]
 
-  protected def process(sm: Coroutine): Output
+  protected def process[TA <: A](sm: Coroutine[TA]): Output[TA]
 
   final type C = scala.continuations.Context[Extract, Suspended]
 
-  final def run(comp: C ?=> A): Output = ??? // marker call
+  final def run[TA <: A](comp: C ?=> TA): Output[TA] = ??? // marker call
 
-  abstract class Coroutine:
+  abstract class Coroutine[TA <: A]:
     type StateId = Int
     def start(): State
     def resume(stateId: StateId, t: Extract): State
 
     enum State:
-      case Finished(answer: A)
+      case Finished(answer: TA)
       case Progressed(value: Suspended[Extract], next: StateId)
       case Failed(exception: Throwable)
