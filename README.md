@@ -23,7 +23,7 @@ Status of the implementation
 - [ ] type definitions
 - [ ] lazy val definitions
 - [ ] loops - [#10](https://github.com/VirtuslabRnD/scala3-coroutines/issues/10)
-- [ ] ifs - [#11](https://github.com/VirtuslabRnD/scala3-coroutines/issues/11)
+- [x] ifs - [#11](https://github.com/VirtuslabRnD/scala3-coroutines/issues/11)
 - [ ] match expressions - [#12](https://github.com/VirtuslabRnD/scala3-coroutines/issues/12)
 - [ ] try/catch - [#13](https://github.com/VirtuslabRnD/scala3-coroutines/issues/13)
 - [ ] early return statements - [#14](https://github.com/VirtuslabRnD/scala3-coroutines/issues/14)
