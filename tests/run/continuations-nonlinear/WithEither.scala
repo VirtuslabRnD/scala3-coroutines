@@ -1,6 +1,6 @@
 import scala.continuations.*
 
-class WithEither[L] extends Executor[Any]:
+class FailingWith[L] extends Executor[Any]:
   type Output[R] = Either[L, R]
   type Extract = Any
   type Suspended[X] = Either[L, X]
@@ -18,7 +18,8 @@ class WithEither[L] extends Executor[Any]:
     handle(sm.start()).asInstanceOf[Either[L, R]]
 
 
-extension [L, R](e: Either[L, R]) inline def extract[F](using c: WithEither[L]#C): R = c.suspend[R](e)
+extension [L, R](e: Either[L, R]) inline def extract[F]: R FailWith L = summon[FailingWith[L]#C].suspend[R](e)
 
-infix type FailWith[R, L] = WithEither[L]#C ?=> R
+inline def fail[L](error: => L): Nothing FailWith L = Left(error).extract
 
+infix type FailWith[+R, L] = FailingWith[L]#C ?=> R
