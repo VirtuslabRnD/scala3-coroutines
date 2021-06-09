@@ -68,6 +68,9 @@ object Properties {
 
   /** scala-library jar */
   def scalaLibrary: String = sys.props("dotty.tests.classes.scalaLibrary")
+  
+  /** cont-library jar */
+  def contLibrary: String = sys.props("dotty.tests.classes.contLibrary")
 
   /** scala-asm jar */
   def scalaAsm: String = sys.props("dotty.tests.classes.scalaAsm")

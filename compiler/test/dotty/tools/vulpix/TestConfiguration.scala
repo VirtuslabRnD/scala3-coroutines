@@ -26,6 +26,12 @@ object TestConfiguration {
     Properties.dottyLibrary
   ))
 
+  val contClasspath = mkClasspath(List(
+    Properties.scalaLibrary,
+    Properties.dottyLibrary,
+    Properties.contLibrary
+  ))
+
   val withCompilerClasspath = mkClasspath(List(
     Properties.scalaLibrary,
     Properties.scalaAsm,

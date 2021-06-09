@@ -7,6 +7,7 @@ val `scala3-library` = Build.`scala3-library`
 val `scala3-library-js` = Build.`scala3-library-js`
 val `scala3-library-bootstrapped` = Build.`scala3-library-bootstrapped`
 val `scala3-library-bootstrappedJS` = Build.`scala3-library-bootstrappedJS`
+val `scala3-library-cont` = Build.`scala3-library-cont`
 val `scala3-sbt-bridge` = Build.`scala3-sbt-bridge`
 val `scala3-sbt-bridge-tests` = Build.`scala3-sbt-bridge-tests`
 val `scala3-staging` = Build.`scala3-staging`

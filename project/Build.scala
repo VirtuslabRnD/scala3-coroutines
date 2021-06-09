@@ -487,6 +487,7 @@ object Build {
           "-Ddotty.tests.classes.dottyLibrary=" + jars("scala3-library"),
           "-Ddotty.tests.classes.dottyCompiler=" + jars("scala3-compiler"),
           "-Ddotty.tests.classes.tastyCore=" + jars("tasty-core"),
+          "-Ddotty.tests.classes.contLibrary=" +  jars("scala3-library-cont"),
           "-Ddotty.tests.classes.compilerInterface=" + findArtifactPath(externalDeps, "compiler-interface"),
           "-Ddotty.tests.classes.scalaLibrary=" + findArtifactPath(externalDeps, "scala-library"),
           "-Ddotty.tests.classes.scalaAsm=" + findArtifactPath(externalDeps, "scala-asm"),
@@ -656,7 +657,8 @@ object Build {
           // running the compiler, we should always have the bootstrapped
           // library on the compiler classpath since the non-bootstrapped one
           // may not be binary-compatible.
-          "scala3-library"       -> (`scala3-library-bootstrapped` / Compile / packageBin).value
+          "scala3-library"       -> (`scala3-library-bootstrapped` / Compile / packageBin).value,
+          "scala3-library-cont" -> (`scala3-library-cont` / Compile / packageBin).value
         ).mapValues(_.getAbsolutePath)
       }
     }.value,
@@ -675,7 +677,7 @@ object Build {
       val jars = packageAll.value
       Seq(
         "-Ddotty.tests.classes.dottyStaging=" + jars("scala3-staging"),
-        "-Ddotty.tests.classes.dottyTastyInspector=" + jars("scala3-tasty-inspector"),
+        "-Ddotty.tests.classes.dottyTastyInspector=" + jars("scala3-tasty-inspector")
       )
     },
     packageAll := {
@@ -758,6 +760,8 @@ object Build {
       Test / test := {},
       Test / testOnly := {},
     )
+
+  lazy val `scala3-library-cont`:Project = project.in(file("library-cont")).asDottyLibrary(Bootstrapped).dependsOn(`scala3-library-bootstrapped`)
 
   lazy val tastyCoreSettings = Seq(
     scalacOptions += "-source:3.0-migration"
