@@ -22,22 +22,26 @@ object Continuations:
     def phaseName = "continuations"
 
     override def transformApply(tree: Apply)(using Context): Tree = tree.fun match
-      case Select(a, f) if tree.symbol.owner == defn.CoroutineExecutor && tree.symbol.name == nme.run =>
+      case TypeApply(Select(a, f), t::Nil) if tree.symbol.owner == defn.CoroutineExecutor && tree.symbol.name == nme.run =>
+        val answerType = t.tpe.typeSymbol.asType.typeRef
         val stabilizer = newSymbol(ctx.owner, "$stabilizer".toTermName, Synthetic, a.tpe).entered
         val stabilizerVal = ValDef(stabilizer.asTerm, a)
-        Block(stabilizerVal :: Nil, cpy.Apply(tree)(Select(ref(stabilizer), "process".toTermName), tree.args.map(procArgs(stabilizer))))
+        Block(stabilizerVal :: Nil, cpy.Apply(tree)(
+          ref(stabilizer).select("process".toTermName).appliedToType(answerType),
+          tree.args.map(procArgs(stabilizer, answerType))
+        ))
       case _ => tree
 
-    private def procArgs(stabilizer: TermSymbol)(using Context): Tree => Tree =
+    private def procArgs(stabilizer: TermSymbol, answerType: Type)(using Context): Tree => Tree =
       case b @ Block((d: DefDef) :: Nil, e) =>
-        val coroutine = generateCoroutine(d.rhs, d.symbol.owner, stabilizer)
+        val coroutine = generateCoroutine(d.rhs, d.symbol.owner, stabilizer, answerType)
         Block(coroutine :: Nil, New(coroutine.symbol.asType.typeRef, Nil))
       case t =>
         t
 
-    private def generateCoroutine(rhs: Tree, owner: Symbol, stabilizer: TermSymbol)(using Context): TypeDef =
+    private def generateCoroutine(rhs: Tree, owner: Symbol, stabilizer: TermSymbol, answerType: Type)(using Context): TypeDef =
       val stabRef = TermRef(NoPrefix, stabilizer)
-      val tpe = TypeRef(stabRef, "Coroutine".toTypeName)
+      val tpe = TypeRef(stabRef, "Coroutine".toTypeName).appliedTo(answerType)
       val cls = newNormalizedClassSymbol(owner, tpnme.ANON_CLASS, Synthetic | Final, tpe :: Nil)
       val constr = DefDef(newConstructor(cls, Synthetic, Nil, Nil).entered)
 
@@ -59,7 +63,7 @@ object Continuations:
         info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), stateIdT :: extractT :: Nil, OrType.make(stateT, stateIdT, false))
       ).asTerm.entered
 
-      def gotoRhs(argss: List[List[Tree]]): Tree = 
+      def gotoRhs(argss: List[List[Tree]]): Tree =
         val (idRef :: extractRef :: Nil) :: Nil = argss: @unchecked
         val entry = CaseDef(makeId(0), EmptyTree, analysis.head.toTree)
         val states = analysis.nodes.map { node => CaseDef(makeId(node.id), EmptyTree, (node.init(extractRef) :: node.rest).toTree) }
