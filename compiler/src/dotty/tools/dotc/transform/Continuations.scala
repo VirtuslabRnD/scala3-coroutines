@@ -22,7 +22,7 @@ object Continuations:
     def phaseName = "continuations"
 
     override def transformApply(tree: Apply)(using Context): Tree = tree.fun match
-      case TypeApply(Select(a, f), t::Nil) if tree.symbol.owner == defn.CoroutineExecutor && tree.symbol.name == nme.run =>
+      case TypeApply(Select(a, f), t::Nil) if tree.symbol.exists && tree.symbol.owner == defn.CoroutineExecutor && tree.symbol.name == nme.run =>
         val answerType = t.tpe.typeSymbol.asType.typeRef
         val stabilizer = newSymbol(ctx.owner, "$stabilizer".toTermName, Synthetic, a.tpe).entered
         val stabilizerVal = ValDef(stabilizer.asTerm, a)
@@ -147,7 +147,7 @@ object Continuations:
         owner = cls,
         name = ("$lift_" + counter + suffix).toTermName,
         flags = Synthetic | Private | Mutable,
-        info = tpe.widen
+        info = tpe.widenUnion
       ).entered.asTerm
       counter += 1
       symbols = sym :: symbols
@@ -191,12 +191,12 @@ object Continuations:
     case Apply(call, args) =>
       val callLift = analyzeWithLift(call)
       val argLifts = args.map(analyzeWithLift)
-      val precoroutine = (callLift :: argLifts).collect { case Lift(Some(c), _) => c }.fold[PreCoroutine](List.empty[Tree])(_ combine _)
+      val precoroutine = (callLift :: argLifts).collect { case Lift(Some(c), _) => c }.fold(PreCoroutine.empty)(_ combine _)
       (precoroutine combine cpy.Apply(tree)(fun = callLift.tree, args = argLifts.map(_.tree)))
 
     case SeqLiteral(elems, tpe) =>
       val lifts = elems.map(analyzeWithLift)
-      val precoroutine = lifts.collect {case Lift(Some(c), _) => c}.fold[PreCoroutine](List.empty[Tree])(_ combine _)
+      val precoroutine = lifts.collect { case Lift(Some(c), _) => c }.fold(PreCoroutine.empty)(_ combine _)
       (precoroutine combine cpy.SeqLiteral(tree)(lifts.map(_.tree), tpe))
 
     // trees that can branch and needs more complex logic:
@@ -272,6 +272,9 @@ object Continuations:
 
   private type Trees = Tree | List[Tree]
   private type PreCoroutine = Coroutine | Trees
+
+  private object PreCoroutine:
+    def empty: PreCoroutine = List.empty[Tree]
 
   extension (trees: Trees)
     private def toList = trees match
