@@ -194,6 +194,11 @@ object Continuations:
       val precoroutine = (callLift :: argLifts).collect { case Lift(Some(c), _) => c }.fold[PreCoroutine](List.empty[Tree])(_ combine _)
       (precoroutine combine cpy.Apply(tree)(fun = callLift.tree, args = argLifts.map(_.tree)))
 
+    case SeqLiteral(elems, tpe) =>
+      val lifts = elems.map(analyzeWithLift)
+      val precoroutine = lifts.collect {case Lift(Some(c), _) => c}.fold[PreCoroutine](List.empty[Tree])(_ combine _)
+      (precoroutine combine cpy.SeqLiteral(tree)(lifts.map(_.tree), tpe))
+
     // trees that can branch and needs more complex logic:
     case If(cond, thenp, elsep) =>
       val condLift = analyzeWithLift(cond)
