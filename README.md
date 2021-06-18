@@ -13,6 +13,8 @@ Status of the implementation
 - [ ] Handling of exceptions thrown in coroutine body - [#16](https://github.com/VirtuslabRnD/scala3-coroutines/issues/16)
 - [ ] Opaque coroutine state
 - [ ] Composition of coroutine of different kind
+- [ ] Execution plan
+
 #### Syntax elements working correctly inside of coroutines:
 - [x] calls
 - [x] assingments
