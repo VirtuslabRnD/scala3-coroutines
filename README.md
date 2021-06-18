@@ -21,7 +21,8 @@ Status of the implementation
 - [x] block expressions
 - [x] inlined calls
 - [x] val definitions
-- [ ] def definitions
+- [x] simple def definitions
+- [ ] nested def definitions
 - [ ] type definitions
 - [ ] lazy val definitions
 - [ ] loops - [#10](https://github.com/VirtuslabRnD/scala3-coroutines/issues/10)
