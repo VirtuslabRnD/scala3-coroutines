@@ -53,6 +53,12 @@ object Continuations:
 
       given lifter: LiftState = LiftState(cls)
       val analysis = analyze(rhs).simplifyOrWrap(lifter.markFinish)
+      println("!!!!!!!!!!!!!!!!!")
+      println(rhs.show)
+      println("@@@@@@@@@@@@@@@@@")
+      println(rhs)
+      println("#################")
+
       val vars = lifter.symbols.map(s => ValDef(s))
 
 
@@ -63,6 +69,8 @@ object Continuations:
         info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), stateIdT :: extractT :: Nil, OrType.make(stateT, stateIdT, false))
       ).asTerm.entered
 
+      val equalsSym = defn.Any_equals
+
       def gotoRhs(argss: List[List[Tree]]): Tree =
         val (idRef :: extractRef :: Nil) :: Nil = argss: @unchecked
         val entry = CaseDef(makeId(0), EmptyTree, analysis.head.toTree)
@@ -70,6 +78,17 @@ object Continuations:
         val fallback = Throw(New(defn.IllegalArgumentExceptionType, Nil))
         Match(idRef, entry +: states :+ CaseDef(Underscore(idRef.tpe), EmptyTree, fallback))
       end gotoRhs
+
+      // def gotoRhs(argss: List[List[Tree]]): Tree =
+      //   val (idRef :: extractRef :: Nil) :: Nil = argss: @unchecked
+      //   val entry = analysis.head.toTree
+      //   val states = analysis.nodes.map { node => (node.init(extractRef) :: node.rest).toTree }
+      //   val fallback = Throw(New(defn.IllegalArgumentExceptionType, Nil))
+      //   (entry +: states).zipWithIndex.foldRight(fallback) { case ((state, stateId), alternative) => 
+      //     val cond = idRef.select(defn.Any_equals).appliedTo(Literal(Constant(stateId)))
+      //     If(cond, state, alternative)
+      //   }
+      // end gotoRhs
 
       val gotoTree = DefDef(gotoSym, gotoRhs)
       reown(gotoTree.rhs, gotoSym)
@@ -92,6 +111,26 @@ object Continuations:
         val idCase = makeCase("id", stateIdT)(ref(dispatchSym).appliedTo(_, Literal(Constant(null)).asInstance(extractT)))
         Match(ref(gotoSym).appliedTo(idRef, extractRef), stCase :: idCase :: Nil)
       end dispatchRhs
+
+      // def dispatchRhs(argss: List[List[Tree]]): Tree =
+      //   val (idRef :: extractRef :: Nil) :: Nil = argss: @unchecked
+      //   val stateOrIdSym = newSymbol(
+      //     owner = dispatchSym,
+      //     name = "stateOrId".toTermName,
+      //     flags = Synthetic,
+      //     info = OrType(stateT, stateIdT, soft = false)
+      //   )
+      //   val stateOrIdRhs = ref(gotoSym).appliedTo(idRef, extractRef)
+      //   val resultValDef = ValDef(stateOrIdSym, stateOrIdRhs)
+      //   val cond = ref(stateOrIdSym).select(defn.Any_isInstanceOf).appliedToType(stateT)
+      //   val ifTrue = ref(stateOrIdSym).select(defn.Any_asInstanceOf).appliedToType(stateT)
+      //   val ifFalse = ref(dispatchSym).appliedTo(
+      //     ref(stateOrIdSym).select(defn.Any_asInstanceOf).appliedToType(stateIdT),
+      //     Literal(Constant(null)).asInstance(extractT)
+      //   )
+      //   val ifExpr = If(cond, ifTrue, ifFalse)
+      //   Block(List(resultValDef), ifExpr)
+      // end dispatchRhs
 
       val dispatchTree = DefDef(dispatchSym, dispatchRhs)
 
@@ -116,13 +155,18 @@ object Continuations:
 
       val supertype = New(tpe, Nil)
 
-      ClassDefWithParents(cls, constr, supertype::Nil, gotoTree :: dispatchTree :: startTree :: resumeTree :: vars)
+      val foo = ClassDefWithParents(cls, constr, supertype::Nil, gotoTree :: dispatchTree :: startTree :: resumeTree :: vars)
+      println(foo.show)
+      println("$$$$$$$$$$$$$$$$$")
+      println(foo)
+      println(";;;;;;;;;;;;;;")
+      foo
     end generateCoroutine
 
     private def reown(block: Tree, newOwner: Symbol)(using Context) =
       object Reowner extends TreeTraverser:
         override def traverse(tree: Tree)(using Context) = tree match
-          case v: ValDef => v.symbol.copySymDenotation(owner = newOwner).installAfter(thisPhase)
+          case v: DefTree => v.symbol.copySymDenotation(owner = newOwner).installAfter(thisPhase)
           case _ => traverseChildren(tree)
       Reowner.traverse(block)
 
@@ -142,6 +186,12 @@ object Continuations:
     def last = symbols.head
 
     def make(tpe: Type, original: Symbol = NoSymbol)(using Context): TermSymbol =
+      // println("%%%%%%%%%%%%%%%%%")
+      // println(tpe.show)
+      // println(original)
+      // println("&&&&&&&&&&&&&&&&&")
+      // if tpe.show == "Nothing" then
+      //   throw new Exception("qqqqq")
       val suffix = if original == NoSymbol then "" else "_$" + original.name.toString
       val sym = newSymbol(
         owner = cls,
@@ -175,11 +225,15 @@ object Continuations:
     case Typed(expr, tpt) => analyze(expr).simplifyOrWrap(cpy.Typed(tree)(_, tpt))
     case Select(qual, name) => analyze(qual).simplifyOrWrap(cpy.Select(tree)(_, name))
     case TypeApply(fn, args) => analyze(fn).simplifyOrWrap(cpy.TypeApply(tree)(_, args))
+    case Bind(name, body) => analyze(body).simplifyOrWrap(cpy.Bind(tree)(name, _))
 
     // always lifted:
     case v: ValDef =>
       val sym = lifter.make(v.rhs.tpe, v.symbol)
       analyze(v.rhs).simplifyOrWrap(t => cpy.Assign(v)(lhs = ref(sym), rhs = t))
+    // case b @ Bind(name, body) =>
+    //   val sym = lifter.make(body.tpe/* , name.toTermName */)
+    //   analyze(body).simplifyOrWrap(t => cpy.Assign(b)(lhs = ref(sym), rhs = body))
 
     // suspend - create the new coroutine:
     case Apply(call, arg :: Nil) if call.symbol.owner == defn.ContinuationContext && call.symbol.name.toString == "suspend" =>
@@ -219,7 +273,110 @@ object Continuations:
         case Some(head) => head combine tail
         case None => tail
 
-    // may be lcoal reference that was lifted
+
+    // assumption: neither patterns nor guards can invokde coroutines
+    // case Match(selector, cases) =>
+    //   val selectorLift = analyzeWithLift(selector)
+    //   val analyzedCaseBodies = cases.map(c => analyze(c.body))
+
+    //   // println("%%%%%%%%%%%%%%%%%")
+    //   // println(tree.tpe.show)
+    //   // println(tree.show)
+    //   // println("&&&&&&&&&&&&&&&&&")
+
+    //   val tail = if (analyzedCaseBodies.forall(_.isInstanceOf[Trees]))
+    //     then
+    //       val xCases = cases.zip(analyzedCaseBodies).map((c, body) => cpy.CaseDef(c)(c.pat, c.guard, body.asInstanceOf[Trees].toTree))
+    //       cpy.Match(tree)(selectorLift.tree, xCases)
+    //     else
+    //       val newState = lifter.newState
+    //       val sym = lifter.make(tree.tpe)
+    //       def lift(pc: PreCoroutine) = pc.simplifyOrWrap(Assign(ref(sym), _)) combine Literal(Constant(newState))
+    //       val caseBodiesLifts: List[PreCoroutine] = analyzedCaseBodies.map(lift)
+    //       //val newBodies = caseBodiesLifts.map(bodyLift => bodyLift.body)
+    //       val casesLifts = cases.zip(caseBodiesLifts).map((c, l) => cpy.CaseDef(c)(c.pat, c.guard, l.head.toTree))
+    //       val foo = cpy.Match(tree)(selectorLift.tree, casesLifts /* caseBodiesLifts.map(lift => _.head.toTree) */)
+    //       val empty = Coroutine(Nil, Node(_ => ref(sym), Nil, tree.tpe, newState) :: Nil)
+    //       (foo +: caseBodiesLifts.map(_.body) :+ empty).reduceLeft(_ combine _)
+      
+    //   selectorLift.coroutine match
+    //     case Some(head) => head combine tail
+    //     case None => tail
+
+
+    case Match(selector, cases) =>
+      val selectorLift = analyzeWithLift(selector)
+      // val analyzedCaseBodies = cases.map(c => analyze(c.body))
+      val analyzedCases = cases.map(c => (analyze(c.pat), analyze(c.guard), analyze(c.body)))
+
+      // println("%%%%%%%%%%%%%%%%%")
+      // println(tree.tpe.show)
+      // println(tree.show)
+      // println("&&&&&&&&&&&&&&&&&")
+
+      // val tail = if (analyzedCaseBodies.forall(_.isInstanceOf[Trees]))
+      val tail = if (analyzedCases.forall{ (pat, guard, body) => pat.isInstanceOf[Trees] && guard.isInstanceOf[Trees] && body.isInstanceOf[Trees] })
+        then
+          //val xCases = cases.zip(analyzedCaseBodies).map((c, body) => cpy.CaseDef(c)(c.pat, c.guard, body.asInstanceOf[Trees].toTree))
+          //cpy.Match(tree)(selectorLift.tree, xCases)
+          val xCases = analyzedCases.map((pat, guard, body) => CaseDef(pat.asInstanceOf[Trees].toTree, guard.asInstanceOf[Trees].toTree, body.asInstanceOf[Trees].toTree))
+          cpy.Match(tree)(selectorLift.tree, xCases)
+        else
+          val newState = lifter.newState
+          val sym = lifter.make(tree.tpe)
+          def lift(pc: PreCoroutine) = pc.simplifyOrWrap(Assign(ref(sym), _)) combine Literal(Constant(newState))
+          // val caseBodiesLifts: List[PreCoroutine] = analyzedCaseBodies.map(lift)
+          // val casesLifts = cases.zip(caseBodiesLifts).map((c, l) => cpy.CaseDef(c)(c.pat, c.guard, l.head.toTree))
+          val casesLifts = analyzedCases.map { (pat, guard, body) => 
+            //TODO
+            // println("1111111")
+            // println(pat)
+            // println(pat.head)
+            // println(pat.head.toTree)
+            // println("2222222")
+            // println(guard)
+            // println(guard.head)
+            // println(guard.head.toTree)
+            // println("33333333")
+
+            CaseDef(pat.head.toTree, guard.head.toTree, body.head.toTree)
+          }
+          val foo = cpy.Match(tree)(selectorLift.tree, casesLifts /* caseBodiesLifts.map(lift => _.head.toTree) */)
+          val empty = Coroutine(Nil, Node(_ => ref(sym), Nil, tree.tpe, newState) :: Nil)
+          // (foo +: caseBodiesLifts.map(_.body) :+ empty).reduceLeft(_ combine _)
+          val combinedCases = analyzedCases.map((pat, guard, body) => /* pat combine guard combine */ body)
+          (foo +: combinedCases :+ empty).reduceLeft(_ combine _)
+      
+      val bar = selectorLift.coroutine match
+        case Some(head) => head combine tail
+        case None => tail
+
+      println("%%%%%%%")
+      println(bar)
+
+      bar
+
+
+    // case Labeled(bind, expr) =>
+    //     //     case Block(stats, expr) => (stats :+ expr).map(analyze).reduce(_ combine _).simplify(tt => cpy.Block(tree)(tt.init, tt.last))
+    //   //cpy.Labeled(tree)(bind)
+    //   val x = analyze(expr)
+    //   println(expr.show)
+    //   println("||||||||||||")
+    //   println(x)
+    //   println("::::::::::")
+    //   // println(x.show)
+    //   // println(".........")
+    //   analyze(expr).simplifyOrWrap(cpy.Labeled(tree)(bind, _))
+
+    //   // analyze(expr).simplify(tt => cpy.Labeled(tree)(bind, _))
+    //   // cpy.Labeled(tree)(bind, analyze(expr))
+
+    // case Return(expr, from) =>
+    //   analyze(expr).simplifyOrWrap(cpy.Return(tree)(_, from))
+        
+
+    // may be local reference that was lifted
     case t: Ident =>
       lifter.lifted.get(t.symbol) match
         case Some(symbol) => ref(symbol)
@@ -227,6 +384,7 @@ object Continuations:
 
     // do not need transformations:
     case _: Literal  => tree
+    case EmptyTree => tree
 
     // debug case TODO: remove
     case _ =>
@@ -240,12 +398,24 @@ object Continuations:
   private case class Lift(coroutine: Option[Coroutine], tree: Tree)
 
   private def analyzeWithLift(tree: Tree)(using LiftState, Context): Lift =
-    analyze(tree) match
+    val foo = analyze(tree)
+    // println("`````````")
+    // println(tree.tpe.show)
+    // println(tree.show)
+    // println("?????????")
+    // println(foo)
+    // println("/////////")
+
+    // if tree.tpe.show == "(Boolean#== : (x: Boolean): Boolean)" then
+    //   throw new Exception("qqqqqq")
+
+    foo match
+    // analyze(tree) match
       case t: Tree => Lift(None, t)
       case tt: List[Tree] => Lift(None, tt.toTree)
       case coroutine: Coroutine =>
         val c = coroutine.mapLastNode { n =>
-          val sym = lifter.make(n.tpe)
+          val sym = lifter.make(tree.tpe)
           n.wrap(Assign(ref(sym), _))
         }.asInstanceOf[Coroutine]
         Lift(Some(c), ref(lifter.last)) // TODO: Eliminate last
@@ -283,6 +453,8 @@ object Continuations:
 
     private def toTree(using Context) = trees match
       case t: Tree => t
+      case Nil => EmptyTree
+      case head :: Nil => head
       case tt: List[Tree] => Block(tt.init, tt.last)
 
 
@@ -293,7 +465,7 @@ object Continuations:
       case (l: Trees, r: Coroutine) => r.prepend(l.toList)
       case (l: Trees, r: Trees) => l.toList ++ r.toList
 
-    private def orOriginal(original: => Tree): PreCoroutine = left match
+    private def orOriginal(original: => Tree): PreCoroutine = left match // replaceLinear
       case l: Coroutine => l
       case _ => original
 
@@ -301,7 +473,7 @@ object Continuations:
       case l: Coroutine => l
       case tt: Trees => f(tt.toList)
 
-    private def simplifyOrWrap(f: Tree => Tree)(using Context): PreCoroutine = left match
+    private def simplifyOrWrap(f: Tree => Tree)(using Context): PreCoroutine = left match //mapLast?
       case l: Coroutine => l.mapLastNode(_.wrap(f))
       case tt: List[Tree] => tt.toTree.simplifyOrWrap(f)
       case t: Tree => f(t)
@@ -310,7 +482,7 @@ object Continuations:
       case l: Coroutine => l.copy(body = l.body.init :+ f(l.body.last))
       case t => t
 
-    private def head: List[Tree] = left match
+    private def head: List[Tree] = left match // rename(?!)
       case l: Coroutine => l.head
       case tt: Trees => tt.toList
 

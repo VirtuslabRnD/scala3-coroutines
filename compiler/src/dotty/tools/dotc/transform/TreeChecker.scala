@@ -223,6 +223,13 @@ class TreeChecker extends Phase with SymTransformer {
     def assertDefined(tree: untpd.Tree)(using Context): Unit =
       if (tree.symbol.maybeOwner.isTerm) {
         val sym = tree.symbol
+        if !nowDefinedSyms.contains(sym) && !patBoundSyms.contains(sym) then
+          println("**********")
+          println(sym)
+          println("&&&&&&&&&")
+          println(nowDefinedSyms)
+          println("^^^^^^^^^^")
+          println(patBoundSyms)
         assert(
           nowDefinedSyms.contains(sym) || patBoundSyms.contains(sym),
           i"undefined symbol ${sym} at line " + tree.srcPos.line
@@ -566,6 +573,13 @@ class TreeChecker extends Phase with SymTransformer {
           !tree.isEmpty &&
           !isPrimaryConstructorReturn &&
           !pt.isInstanceOf[FunOrPolyProto])
+
+        // if(!(tree.tpe <:< pt)) then
+        //   println("~~~~~~~~~~~")
+        //   println(tree.tpe.show)
+        //   println(tree.tpe)
+        //   println(pt.show)
+        //   println(pt)
         assert(tree.tpe <:< pt, {
           val mismatch = TypeMismatch(tree.tpe, pt)
           i"""|${mismatch.msg}

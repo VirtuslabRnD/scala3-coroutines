@@ -75,10 +75,10 @@ class Compiler {
          new HoistSuperArgs,         // Hoist complex arguments of supercalls to enclosing scope
          new SpecializeApplyMethods, // Adds specialized methods to FunctionN
          new RefChecks) ::           // Various checks mostly related to abstract members and overriding
-    List(new ElimOpaque,             // Turn opaque into normal aliases
-         new TryCatchPatterns,       // Compile cases in try/catch
-         new PatternMatcher,         // Compile pattern matches
-         new sjs.ExplicitJSClasses,  // Make all JS classes explicit (Scala.js only)
+    List(new ElimOpaque,
+         new TryCatchPatterns) ::       // Compile cases in try/catch
+    List(new PatternMatcher,         // Compile pattern matches
+         new sjs.ExplicitJSClasses,  // Make all JS classes explicit (Scala.js only)) ::             // Turn opaque into normal aliases
          new ExplicitOuter,          // Add accessors to outer classes from nested ones.
          new ExplicitSelf,           // Make references to non-trivial self types explicit as casts
          new ElimByName,             // Expand by-name parameter references
@@ -99,6 +99,7 @@ class Compiler {
          new TupleOptimizations,     // Optimize generic operations on tuples
          new LetOverApply,           // Lift blocks from receivers of applications
          new ArrayConstructors) ::   // Intercept creation of (non-generic) arrays and intrinsify.
+    //List(new Continuations.Transform) ::
     List(new Erasure) ::             // Rewrite types to JVM model, erasing all type parameters, abstract types and refinements.
     List(new ElimErasedValueType,    // Expand erased value types to their underlying implmementation types
          new PureStats,              // Remove pure stats from blocks
