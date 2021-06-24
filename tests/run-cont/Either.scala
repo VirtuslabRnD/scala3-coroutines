@@ -1,9 +1,6 @@
 import scala.collection.*
 import scala.continuations.*
 
-class A:
-  class B
-
 @main def Test =
   val myEither = FailingWith[String].run {
     val d: Double = 2.5 * fallible1.extract

@@ -15,11 +15,51 @@ import Symbols.*
 import StdNames.*
 import Types.*
 import typer.Inliner
+import dotty.tools.dotc.core.Names.TermName
+import dotty.tools.dotc.core.Names.TermName
 
 object Continuations:
   class Transform extends MiniPhase with IdentityDenotTransformer:
     thisPhase =>
     def phaseName = "continuations"
+
+    override def transformDefDef(tree: DefDef)(using Context) =
+      val orig = tree.symbol.asTerm
+      val coroutine = Option.unless(orig.is(Inline))(orig.info).flatMap(findContext).map { t =>
+        val sym = orig.copy(
+          name = orig.name ++ "$coroutine",
+          info = t.makeType,
+          flags = orig.flags | Synthetic
+        ).asTerm.entered
+
+        def rhs(paramss: List[List[Tree]]) =
+          val mapping: Map[Symbol, Tree] = orig.paramSymss.zip(paramss).flatMap(_ zip _).toMap
+          val stabilizer = TermRef(NoPrefix, paramss.last.last.symbol)
+          procClosure(stabilizer, t.result, mapping)(tree.rhs)
+
+        val result = DefDef(sym, rhs)
+        reown(result.rhs, sym)
+        result
+      }
+      coroutine match
+        case Some(c) => Thicket(c, tree)
+        case _ => tree
+
+    case class CInfo(namess: List[List[TermName]], argss: List[List[Type]], executor: Type, result: Type):
+      def makeType(using Context) =
+        def rec(namess: List[List[TermName]], argss: List[List[Type]], executor: Type): Type = (namess, argss) match
+          case (names :: nr, args :: ar) => MethodType(names, args, rec(nr, ar, executor))
+          case (_, _) =>
+            MethodType("$executor".toTermName :: Nil)(_ => executor::Nil, m => m.newParamRef(0).select("Coroutine".toTypeName).appliedTo(result))
+        rec(namess, argss, executor)
+
+    private def findContext(tpe: Type)(using Context): Option[CInfo] = tpe match
+      case MethodTpe(names, tpes, ret) => findContext(ret).map(i => i.copy(names :: i.namess, tpes :: i.argss))
+      case defn.ContextFunctionType(params, res, _) =>
+        params.find(_.classSymbol == defn.ContinuationContext)
+          .collect { case TypeRef(exe, _) => exe }
+          .map(CInfo(Nil, Nil, _, res))
+      case _ => None
 
     override def transformApply(tree: Apply)(using Context): Tree = tree.fun match
       case TypeApply(Select(a, f), t::Nil) if tree.symbol.exists && tree.symbol.owner == defn.CoroutineExecutor && tree.symbol.name == nme.run =>
@@ -28,30 +68,29 @@ object Continuations:
         val stabilizerVal = ValDef(stabilizer.asTerm, a)
         Block(stabilizerVal :: Nil, cpy.Apply(tree)(
           ref(stabilizer).select("process".toTermName).appliedToType(answerType),
-          tree.args.map(procArgs(stabilizer, answerType))
+          tree.args.map(procClosure(TermRef(NoPrefix, stabilizer), answerType, Map.empty))
         ))
       case _ => tree
 
-    private def procArgs(stabilizer: TermSymbol, answerType: Type)(using Context): Tree => Tree =
-      case b @ Block((d: DefDef) :: Nil, e) =>
-        val coroutine = generateCoroutine(d.rhs, d.symbol.owner, stabilizer, answerType)
+    private def procClosure(typePrefix: Type, answerType: Type, params: Map[Symbol, Tree])(using Context): Tree => Tree =
+      case b @ Block((d: DefDef) :: Nil, _) =>
+        val coroutine = generateCoroutine(d.rhs, d.symbol.owner, typePrefix, answerType, params)
         Block(coroutine :: Nil, New(coroutine.symbol.asType.typeRef, Nil))
       case t =>
         t
 
-    private def generateCoroutine(rhs: Tree, owner: Symbol, stabilizer: TermSymbol, answerType: Type)(using Context): TypeDef =
-      val stabRef = TermRef(NoPrefix, stabilizer)
-      val tpe = TypeRef(stabRef, "Coroutine".toTypeName).appliedTo(answerType)
+    private def generateCoroutine(rhs: Tree, owner: Symbol, typePrefix: Type, answerType: Type, params: Map[Symbol, Tree])(using Context): TypeDef =
+      val tpe = TypeRef(typePrefix, "Coroutine".toTypeName).appliedTo(answerType)
       val cls = newNormalizedClassSymbol(owner, tpnme.ANON_CLASS, Synthetic | Final, tpe :: Nil)
       val constr = DefDef(newConstructor(cls, Synthetic, Nil, Nil).entered)
 
       def tref(name: String) = TypeRef(cls.thisType, name.toTypeName)
       val stateT = tref("State")
       val stateIdT = tref("StateId")
-      val extractT = TypeRef(stabRef, "Extract".toTypeName)
+      val extractT = TypeRef(typePrefix, "Extract".toTypeName)
       def makeId(id: Int): Tree = Literal(Constant(id))//.asInstance(stateIdT)
 
-      given lifter: LiftState = LiftState(cls)
+      given lifter: LiftState = LiftState(cls, params)
       val analysis = analyze(rhs).simplifyOrWrap(lifter.markFinish)
       val vars = lifter.symbols.map(s => ValDef(s))
 
@@ -122,14 +161,13 @@ object Continuations:
     private def reown(block: Tree, newOwner: Symbol)(using Context) =
       object Reowner extends TreeTraverser:
         override def traverse(tree: Tree)(using Context) = tree match
-          case v: ValDef => v.symbol.copySymDenotation(owner = newOwner).installAfter(thisPhase)
+          case m: MemberDef => m.symbol.copySymDenotation(owner = newOwner).installAfter(thisPhase)
           case _ => traverseChildren(tree)
       Reowner.traverse(block)
 
-
   /* === analysis === */
 
-  private class LiftState(cls: ClassSymbol)(using Context):
+  private class LiftState(cls: ClassSymbol, params: Map[Symbol, Tree])(using Context):
     private val stateMod = This(cls).select("State".toTermName)
     private val finished = stateMod.select("Finished".toTermName).select(nme.apply)
     private val progressed = stateMod.select("Progressed".toTermName).select(nme.apply)
@@ -137,7 +175,7 @@ object Continuations:
     private var states: Int = 0
     private var counter: Int = 0
     var symbols: List[TermSymbol] = Nil
-    val lifted = mutable.Map[Symbol, Symbol]()
+    private val lifted = mutable.Map[Symbol, Symbol]()
 
     def last = symbols.head
 
@@ -153,6 +191,9 @@ object Continuations:
       symbols = sym :: symbols
       if original != NoSymbol then lifted += (original -> sym)
       sym
+
+    def translateRef(tree: Tree): Tree =
+      params.get(tree.symbol) orElse lifted.get(tree.symbol).map(ref(_)) getOrElse tree
 
     def newState =
       states += 1
@@ -221,9 +262,7 @@ object Continuations:
 
     // may be lcoal reference that was lifted
     case t: Ident =>
-      lifter.lifted.get(t.symbol) match
-        case Some(symbol) => ref(symbol)
-        case None => t
+      lifter.translateRef(t)
 
     // do not need transformations:
     case _: Literal  => tree
