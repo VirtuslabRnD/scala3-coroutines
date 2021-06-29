@@ -929,8 +929,8 @@ class Definitions {
   @tu lazy val ContinuationContext: ClassSymbol = requiredClass("scala.continuations.Context")
   @tu lazy val CoroutineExecutor: ClassSymbol = requiredClass("scala.continuations.Executor")
   @tu lazy val Coroutine: ClassSymbol = CoroutineExecutor.requiredClass("Coroutine")
-  @tu lazy val Coroutine_start: TermSymbol = Coroutine.requiredMethod("start")
-  @tu lazy val Coroutine_resume: TermSymbol = Coroutine.requiredMethod("resume")
+  @tu lazy val Coroutine_start: TermSymbol = Coroutine.requiredMethod("startInternal")
+  @tu lazy val Coroutine_resume: TermSymbol = Coroutine.requiredMethod("resumeInternal")
   @tu lazy val CoroutineState: ClassSymbol = Coroutine.requiredClass("State")
   @tu lazy val CoroutineState_Failed: Symbol = CoroutineState.companionModule.requiredValue("Failed")
 

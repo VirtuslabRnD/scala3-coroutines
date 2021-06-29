@@ -72,26 +72,24 @@ object Continuations:
         ))
       case _ => tree
 
-    private def procClosure(typePrefix: Type, answerType: Type, params: Map[Symbol, Tree])(using Context): Tree => Tree =
+    private def procClosure(typePrefix: NamedType, answerType: Type, params: Map[Symbol, Tree])(using Context): Tree => Tree =
       case b @ Block((d: DefDef) :: Nil, _) =>
         val coroutine = generateCoroutine(d.rhs, d.symbol.owner, typePrefix, answerType, params)
         Block(coroutine :: Nil, New(coroutine.symbol.asType.typeRef, Nil))
       case t =>
         t
 
-    private def generateCoroutine(rhs: Tree, owner: Symbol, typePrefix: Type, answerType: Type, params: Map[Symbol, Tree])(using Context): TypeDef =
+    private def generateCoroutine(rhs: Tree, owner: Symbol, typePrefix: NamedType, answerType: Type, params: Map[Symbol, Tree])(using Context): TypeDef =
       val tpe = TypeRef(typePrefix, "Coroutine".toTypeName).appliedTo(answerType)
       val cls = newNormalizedClassSymbol(owner, tpnme.ANON_CLASS, Synthetic | Final, tpe :: Nil)
       val constr = DefDef(newConstructor(cls, Synthetic, Nil, Nil).entered)
 
-      def tref(name: String) = TypeRef(cls.thisType, name.toTypeName)
-      val stateT = tref("State")
-      val stateIdT = tref("StateId")
+      val stackChT = TypeRef(typePrefix, "StackChange".toTypeName)
       val extractT = TypeRef(typePrefix, "Extract".toTypeName)
-      def makeId(id: Int): Tree = Literal(Constant(id))//.asInstance(stateIdT)
+      def makeId(id: Int): Tree = Literal(Constant(id))
 
-      given lifter: LiftState = LiftState(cls, params)
-      val analysis = analyze(rhs).simplifyOrWrap(lifter.markFinish)
+      given lifter: LiftState = LiftState(typePrefix, cls, params)
+      val analysis = analyze(rhs).simplifyOrWrap(lifter.markStackPop)
       val vars = lifter.symbols.map(s => ValDef(s))
 
 
@@ -99,7 +97,7 @@ object Continuations:
         owner = cls,
         name = "goto".toTermName,
         flags = Method | Private | Synthetic,
-        info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), stateIdT :: extractT :: Nil, OrType.make(stateT, stateIdT, false))
+        info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), defn.IntType :: extractT :: Nil, OrType.make(stackChT, defn.IntType, false))
       ).asTerm.entered
 
       def gotoRhs(argss: List[List[Tree]]): Tree =
@@ -118,7 +116,7 @@ object Continuations:
         owner = cls,
         name = "dispatch".toTermName,
         flags = Method | Private | Synthetic,
-        info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), stateIdT :: extractT :: Nil, stateT)
+        info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), defn.IntType :: extractT :: Nil, stackChT)
       ).asTerm.entered
 
       def dispatchRhs(argss: List[List[Tree]]): Tree =
@@ -127,8 +125,8 @@ object Continuations:
           CaseDef(Bind(sym, Typed(Underscore(tpe), TypeTree(tpe))), EmptyTree, body(ref(sym)))
 
         val (idRef :: extractRef :: Nil) :: Nil = argss: @unchecked
-        val stCase = makeCase("st", stateT)(identity)
-        val idCase = makeCase("id", stateIdT)(ref(dispatchSym).appliedTo(_, Literal(Constant(null)).asInstance(extractT)))
+        val stCase = makeCase("st", stackChT)(identity)
+        val idCase = makeCase("id", defn.IntType)(ref(dispatchSym).appliedTo(_, Literal(Constant(null)).asInstance(extractT)))
         Match(ref(gotoSym).appliedTo(idRef, extractRef), stCase :: idCase :: Nil)
       end dispatchRhs
 
@@ -137,16 +135,17 @@ object Continuations:
 
       val startSym = defn.Coroutine_start.copy(
         owner = cls,
-        info = MethodType(Nil, Nil, stateT),
-        flags = Synthetic | Method | Final | Override
+        info = MethodType(Nil, Nil, stackChT),
+        flags = Synthetic | Method | Final | Override | Protected
       ).asTerm.entered
+
       val startRhs = ref(dispatchSym).appliedTo(Literal(Constant(0)), Literal(Constant(null)).asInstance(extractT))
       val startTree = DefDef(startSym, startRhs)
 
       val resumeSym = defn.Coroutine_resume.copy(
         owner = cls,
-        info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), stateIdT :: extractT :: Nil, stateT),
-        flags = Synthetic | Method | Final | Override
+        info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), defn.IntType :: extractT :: Nil, stackChT),
+        flags = Synthetic | Method | Final | Override | Protected
       ).asTerm.entered
       def resumeRhs(argss: List[List[Tree]]): Tree =
         val (idRef :: extractRef :: Nil) :: Nil = argss: @unchecked
@@ -167,10 +166,10 @@ object Continuations:
 
   /* === analysis === */
 
-  private class LiftState(cls: ClassSymbol, params: Map[Symbol, Tree])(using Context):
-    private val stateMod = This(cls).select("State".toTermName)
-    private val finished = stateMod.select("Finished".toTermName).select(nme.apply)
-    private val progressed = stateMod.select("Progressed".toTermName).select(nme.apply)
+  private class LiftState(typePrefix: NamedType, cls: ClassSymbol, params: Map[Symbol, Tree])(using Context):
+    private val stackChMod = ref(typePrefix).select("StackChange".toTermName)
+    private val stackPop = stackChMod.select("Pop".toTermName).select(nme.apply)
+    private val progress = stackChMod.select("Progress".toTermName).select(nme.apply)
 
     private var states: Int = 0
     private var counter: Int = 0
@@ -200,9 +199,9 @@ object Continuations:
       states
 
     def markProgress(to: Int)(tree: Tree): Tree =
-      progressed.appliedTo(tree, Literal(Constant(to)))
+      progress.appliedTo(tree, Literal(Constant(to)))
 
-    def markFinish(tree: Tree): Tree = finished.appliedTo(tree)
+    def markStackPop(tree: Tree): Tree = stackPop.appliedTo(tree)
   end LiftState
 
   private def lifter(using l: LiftState) = l
