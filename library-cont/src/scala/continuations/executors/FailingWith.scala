@@ -7,13 +7,13 @@ class FailingWith[L] extends Executor[Any]:
 
   def process[R](sm: Coroutine[R]): Either[L, R] =
     import sm.State.*
-    def rec(value: Either[L, (Any, sm.StateId)]): Either[L, Any] = value.flatMap { (v, s) => handle(sm.resume(s, v)) }
+    def rec(value: Either[L, (Any, sm.Frame)]): Either[L, Any] = value.flatMap { (v, f) => handle(f.resume(v)) }
 
     def handle: sm.State => Either[L, Any] =
       case Finished(answer) => Right(answer)
       case Failed(e) => throw e
-      case p@ Progressed(v, s) =>
-        rec(v.map(_ -> s))
+      case p@ Progressed(v, f) =>
+        rec(v.map(_ -> f))
 
     handle(sm.start()).asInstanceOf[Either[L, R]]
 
