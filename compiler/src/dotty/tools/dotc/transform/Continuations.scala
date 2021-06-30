@@ -23,7 +23,7 @@ object Continuations:
 
     override def transformApply(tree: Apply)(using Context): Tree = tree.fun match
       case TypeApply(Select(a, f), t::Nil) if tree.symbol.exists && tree.symbol.owner == defn.CoroutineExecutor && tree.symbol.name == nme.run =>
-        val answerType = t.tpe.typeSymbol.asType.typeRef
+        val answerType = t.tpe
         val stabilizer = newSymbol(ctx.owner, "$stabilizer".toTermName, Synthetic, a.tpe).entered
         val stabilizerVal = ValDef(stabilizer.asTerm, a)
         Block(stabilizerVal :: Nil, cpy.Apply(tree)(

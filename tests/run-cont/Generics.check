@@ -1,0 +1,2 @@
+Right(List(abc, abc, abc))
+Left(Cannot repeat an element a negative number of times)
