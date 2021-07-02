@@ -17,11 +17,13 @@ import Types.*
 import typer.Inliner
 import dotty.tools.dotc.core.Names.TermName
 import dotty.tools.dotc.core.Names.TermName
+import dotty.tools.dotc.util.Property
 
 object Continuations:
-  class Transform extends MiniPhase with IdentityDenotTransformer:
-    thisPhase =>
-    def phaseName = "continuations"
+  private val CoroutineDefInfo = Property.StickyKey[(DefDef, Type)]
+
+  class CoroutineStubs extends MiniPhase:
+    def phaseName = "coroutineStubs"
 
     override def transformDefDef(tree: DefDef)(using Context) =
       val orig = tree.symbol.asTerm
@@ -32,34 +34,30 @@ object Continuations:
           flags = orig.flags | Synthetic
         ).asTerm.entered
 
-        def rhs(paramss: List[List[Tree]]) =
-          val mapping: Map[Symbol, Tree] = orig.paramSymss.zip(paramss).flatMap(_ zip _).toMap
-          val stabilizer = TermRef(NoPrefix, paramss.last.last.symbol)
-          procClosure(stabilizer, t.result, mapping)(tree.rhs)
-
-        val result = DefDef(sym, rhs)
-        reown(result.rhs, sym)
-        result
+        DefDef(sym, Literal(Constant(null))).withAttachment(CoroutineDefInfo, (tree, t.result))
       }
+
       coroutine match
         case Some(c) => Thicket(c, tree)
         case _ => tree
+  end CoroutineStubs
+  class Transform extends MiniPhase with IdentityDenotTransformer:
+    thisPhase =>
+    def phaseName = "continuations"
 
-    case class CInfo(namess: List[List[TermName]], argss: List[List[Type]], executor: Type, result: Type):
-      def makeType(using Context) =
-        def rec(namess: List[List[TermName]], argss: List[List[Type]], executor: Type): Type = (namess, argss) match
-          case (names :: nr, args :: ar) => MethodType(names, args, rec(nr, ar, executor))
-          case (_, _) =>
-            MethodType("$executor".toTermName :: Nil)(_ => executor::Nil, m => m.newParamRef(0).select("Coroutine".toTypeName).appliedTo(result))
-        rec(namess, argss, executor)
+    override def runsAfter = Set("coroutineStubs")
 
-    private def findContext(tpe: Type)(using Context): Option[CInfo] = tpe match
-      case MethodTpe(names, tpes, ret) => findContext(ret).map(i => i.copy(names :: i.namess, tpes :: i.argss))
-      case defn.ContextFunctionType(params, res, _) =>
-        params.find(_.classSymbol == defn.ContinuationContext)
-          .collect { case TypeRef(exe, _) => exe }
-          .map(CInfo(Nil, Nil, _, res))
-      case _ => None
+    override def transformDefDef(tree: DefDef)(using Context) = tree.getAttachment(CoroutineDefInfo) match
+      case Some((origDef, result)) =>
+        val origSym = origDef.symbol.asTerm
+        def rhs(paramss: List[List[Symbol]]) =
+          val mapping: Map[Symbol, Tree] = origSym.paramSymss.zip(paramss).flatMap(_ zip _).map((a, b) => (a, ref(b))).toMap
+          val stabilizer = TermRef(NoPrefix, paramss.last.last)
+          procClosure(stabilizer, result, mapping)(origDef.rhs)
+        val res = cpy.DefDef(tree)(rhs = rhs(tree.symbol.paramSymss))
+        reown(res.rhs, tree.symbol) // TODO: this is overkill
+        res
+      case None => tree
 
     override def transformApply(tree: Apply)(using Context): Tree = tree.fun match
       case TypeApply(Select(a, f), t::Nil) if tree.symbol.exists && tree.symbol.owner == defn.CoroutineExecutor && tree.symbol.name == nme.run =>
@@ -169,6 +167,7 @@ object Continuations:
   private class LiftState(typePrefix: NamedType, cls: ClassSymbol, params: Map[Symbol, Tree])(using Context):
     private val stackChMod = ref(typePrefix).select("StackChange".toTermName)
     private val stackPop = stackChMod.select("Pop".toTermName).select(nme.apply)
+    private val stackPush = stackChMod.select("Push".toTermName).select(nme.apply)
     private val progress = stackChMod.select("Progress".toTermName).select(nme.apply)
 
     private var states: Int = 0
@@ -202,6 +201,11 @@ object Continuations:
       progress.appliedTo(tree, Literal(Constant(to)))
 
     def markStackPop(tree: Tree): Tree = stackPop.appliedTo(tree)
+
+    def markStackPush(to: Int)(tree: Tree): Tree =
+      stackPush.appliedTo(tree, Literal(Constant(to)))
+
+    def executrorRef(using Context) = ref(typePrefix)
   end LiftState
 
   private def lifter(using l: LiftState) = l
@@ -225,7 +229,16 @@ object Continuations:
     case Apply(call, arg :: Nil) if call.symbol.owner == defn.ContinuationContext && call.symbol.name.toString == "suspend" =>
       val newState = lifter.newState
       val left = analyze(arg).simplifyOrWrap(lifter.markProgress(newState))
-      left combine Coroutine(Nil, Node(r => r.asInstance(tree.tpe), Nil, tree.tpe, newState) :: Nil)
+      left combine Coroutine.suspension(tree.tpe, newState)
+
+    // call other coroutine
+    case Apply(Select(Apply(call, args), _), _ :: Nil) if findContext(call.symbol.info).isDefined =>
+      val argsLifted = args.map(analyzeWithLift)
+      val newCall = ref(call.symbol.owner.info.member(call.symbol.name ++ "$coroutine").symbol) // TODO: this doesn't seem to be super reliable
+      val precoroutine = argsLifted.collect { case Lift(Some(c), _) => c }.fold(PreCoroutine.empty)(_ combine _)
+      val newState = lifter.newState
+      val combined = precoroutine combine cpy.Apply(tree)(newCall.appliedToArgs(argsLifted.map(_.tree)), lifter.executrorRef :: Nil)
+      combined.simplifyOrWrap(lifter.markStackPush(newState)) combine Coroutine.suspension(tree.tpe, newState)
 
     // trees that can suspend in different subtrees:
     case Apply(call, args) =>
@@ -237,7 +250,7 @@ object Continuations:
     case SeqLiteral(elems, tpe) =>
       val lifts = elems.map(analyzeWithLift)
       val precoroutine = lifts.collect { case Lift(Some(c), _) => c }.fold(PreCoroutine.empty)(_ combine _)
-      (precoroutine combine cpy.SeqLiteral(tree)(lifts.map(_.tree), tpe))
+      precoroutine combine cpy.SeqLiteral(tree)(lifts.map(_.tree), tpe)
 
     // trees that can branch and needs more complex logic:
     case If(cond, thenp, elsep) =>
@@ -288,9 +301,24 @@ object Continuations:
         }.asInstanceOf[Coroutine]
         Lift(Some(c), ref(lifter.last)) // TODO: Eliminate last
 
+  /* === Context extraction === */
+  case class CInfo(namess: List[List[TermName]], argss: List[List[Type]], executor: Type, result: Type):
+    def makeType(using Context) =
+      def rec(namess: List[List[TermName]], argss: List[List[Type]], executor: Type): Type = (namess, argss) match
+        case (names :: nr, args :: ar) => MethodType(names, args, rec(nr, ar, executor))
+        case (_, _) =>
+          MethodType("$executor".toTermName :: Nil)(_ => executor::Nil, m => m.newParamRef(0).select("Coroutine".toTypeName).appliedTo(result))
+      rec(namess, argss, executor)
+
+  private def findContext(tpe: Type)(using Context): Option[CInfo] = tpe match
+    case MethodTpe(names, tpes, ret) => findContext(ret).map(i => i.copy(names :: i.namess, tpes :: i.argss))
+    case defn.ContextFunctionType(params, res, _) =>
+      params.find(_.classSymbol == defn.ContinuationContext)
+        .collect { case TypeRef(exe, _) => exe }
+        .map(CInfo(Nil, Nil, _, res))
+    case _ => None
 
   /* === coroutines building blocks === */
-
   private case class Node(init: Tree => Tree, rest: List[Tree], tpe: Type, id: Int):
     def append(trees: List[Tree]) = if trees.nonEmpty then copy(rest = rest ++ trees, tpe = trees.last.tpe) else this
 
@@ -307,6 +335,9 @@ object Continuations:
     def prepend(trees: List[Tree]) = copy(head = trees ++ head)
     def append(trees: List[Tree]) = copy(body = body.append(trees))
 
+  private object Coroutine:
+    def suspension(tpe: Type, state: Int)(using Context): Coroutine =
+      Coroutine(Nil, Node(r => r.asInstance(tpe), Nil, tpe, state) :: Nil)
 
   private type Trees = Tree | List[Tree]
   private type PreCoroutine = Coroutine | Trees
