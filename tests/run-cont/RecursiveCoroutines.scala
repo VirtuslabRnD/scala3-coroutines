@@ -16,11 +16,4 @@ import scala.continuations.*
   println(myEither2)
 
 def rec(list: List[Double]): List[Int] FailWith Double =
-  if list == Nil then Nil
-  else if list.head.isWhole then
-    val tail = list.tail
-    val recTail = rec(tail)
-    list.head.toInt :: recTail
-  else 
-    val head = list.head
-    fail(head)
+  if list == Nil then Nil else if list.head.isWhole then list.head.toInt :: rec(list.tail) else fail(list.head)
