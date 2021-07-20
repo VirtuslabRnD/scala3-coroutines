@@ -87,7 +87,7 @@ object Continuations:
       def makeId(id: Int): Tree = Literal(Constant(id))
 
       given lifter: LiftState = LiftState(typePrefix, cls, params)
-      val analysis = analyze(rhs).simplifyOrWrap(lifter.markStackPop)
+      val analysis = analyze(answerType)(rhs).simplifyOrWrap(lifter.markStackPop)
       val vars = lifter.symbols.map(s => ValDef(s))
 
 
@@ -175,15 +175,17 @@ object Continuations:
     var symbols: List[TermSymbol] = Nil
     private val lifted = mutable.Map[Symbol, Symbol]()
 
-    def last = symbols.head
-
     def make(tpe: Type, original: Symbol = NoSymbol)(using Context): TermSymbol =
       val suffix = if original == NoSymbol then "" else "_$" + original.name.toString
+      val expanded: Type = tpe match
+        case ExprType(inner) => defn.FunctionOf(Nil, inner)
+        case MethodTpe(_, args, res) => defn.FunctionOf(args, res)
+        case _ => tpe
       val sym = newSymbol(
         owner = cls,
         name = ("$lift_" + counter + suffix).toTermName,
         flags = Synthetic | Private | Mutable,
-        info = tpe.widenUnion
+        info = expanded
       ).entered.asTerm
       counter += 1
       symbols = sym :: symbols
@@ -210,30 +212,34 @@ object Continuations:
 
   private def lifter(using l: LiftState) = l
 
-  private def analyze(tree: Tree)(using LiftState, Context): PreCoroutine = tree match
+  private def analyze(tpe: Type)(tree: Tree)(using LiftState, Context): PreCoroutine = tree match
     // blocks:
-    case Block(stats, expr) => (stats :+ expr).map(analyze).reduce(_ combine _).simplify(tt => cpy.Block(tree)(tt.init, tt.last))
-    case i: Inlined => analyze(Inliner.dropInlined(i))
+    case Block(stats, expr) =>
+      val statsp = stats.map(analyze(NoType))
+      val exprp = analyze(tpe)(expr)
+      (statsp :+ exprp).reduce(_ combine _).simplify(tt => cpy.Block(tree)(tt.init, tt.last))
+    case i: Inlined => analyze(tpe)(Inliner.dropInlined(i))
 
     // simple wrappable:
-    case Typed(expr, tpt) => analyze(expr).simplifyOrWrap(cpy.Typed(tree)(_, tpt))
-    case Select(qual, name) => analyze(qual).simplifyOrWrap(cpy.Select(tree)(_, name))
-    case TypeApply(fn, args) => analyze(fn).simplifyOrWrap(cpy.TypeApply(tree)(_, args))
+    case Typed(expr, tpt) => analyze(tpt.tpe)(expr).simplifyOrWrap(cpy.Typed(tree)(_, tpt))
+    case Select(qual, name) => analyze(NoType)(qual).simplifyOrWrap(cpy.Select(tree)(_, name))
+    case TypeApply(fn, args) => analyze(NoType)(fn).simplifyOrWrap(cpy.TypeApply(tree)(_, args))
 
     // always lifted:
     case v: ValDef =>
-      val sym = lifter.make(v.rhs.tpe, v.symbol)
-      analyze(v.rhs).simplifyOrWrap(t => cpy.Assign(v)(lhs = ref(sym), rhs = t))
+      val sym = lifter.make(v.symbol.info, v.symbol)
+      analyze(sym.info)(v.rhs).simplifyOrWrap(t => cpy.Assign(v)(lhs = ref(sym), rhs = t))
 
     // suspend - create the new coroutine:
     case Apply(call, arg :: Nil) if call.symbol.owner == defn.ContinuationContext && call.symbol.name.toString == "suspend" =>
       val newState = lifter.newState
-      val left = analyze(arg).simplifyOrWrap(lifter.markProgress(newState))
+      val extractT = call.symbol.info.paramInfoss.head.head
+      val left = analyze(extractT)(arg).simplifyOrWrap(lifter.markProgress(newState))
       left combine Coroutine.suspension(tree.tpe, newState)
 
     // call other coroutine
     case Apply(Select(Apply(call, args), _), _ :: Nil) if findContext(call.symbol.info).isDefined =>
-      val argsLifted = args.map(analyzeWithLift)
+      val argsLifted = (call.symbol.info.paramInfoss.head zip args).map(analyzeWithLift(_)(_))
       val newCall = ref(call.symbol.owner.info.member(call.symbol.name ++ "$coroutine").symbol) // TODO: this doesn't seem to be super reliable
       val precoroutine = argsLifted.collect { case Lift(Some(c), _) => c }.fold(PreCoroutine.empty)(_ combine _)
       val newState = lifter.newState
@@ -242,24 +248,24 @@ object Continuations:
 
     // trees that can suspend in different subtrees:
     case Apply(call, args) =>
-      val callLift = analyzeWithLift(call)
-      val argLifts = args.map(analyzeWithLift)
+      val callLift = analyzeWithLift(NoType)(call)
+      val argLifts = (call.symbol.info.paramInfoss.head zip args).map(analyzeWithLift(_)(_))
       val precoroutine = (callLift :: argLifts).collect { case Lift(Some(c), _) => c }.fold(PreCoroutine.empty)(_ combine _)
       (precoroutine combine cpy.Apply(tree)(fun = callLift.tree, args = argLifts.map(_.tree)))
 
     case SeqLiteral(elems, tpe) =>
-      val lifts = elems.map(analyzeWithLift)
+      val lifts = elems.map(analyzeWithLift(tpe.tpe))
       val precoroutine = lifts.collect { case Lift(Some(c), _) => c }.fold(PreCoroutine.empty)(_ combine _)
       precoroutine combine cpy.SeqLiteral(tree)(lifts.map(_.tree), tpe)
 
     // trees that can branch and needs more complex logic:
     case If(cond, thenp, elsep) =>
-      val condLift = analyzeWithLift(cond)
-      val tail = (analyze(thenp), analyze(elsep)) match
+      val condLift = analyzeWithLift(defn.BooleanType)(cond)
+      val tail = (analyze(tpe)(thenp), analyze(tpe)(elsep)) match
         case (thent: Trees, elset: Trees) => cpy.If(tree)(condLift.tree, thent.toTree, elset.toTree)
         case (thenpc, elsepc) =>
           val newState = lifter.newState
-          val sym = lifter.make(tree.tpe)
+          val sym = lifter.make(tpe orElse tree.tpe)
           def lift(pc: PreCoroutine) = pc.simplifyOrWrap(Assign(ref(sym), _)) combine Literal(Constant(newState))
           val thenl = lift(thenpc)
           val elsel = lift(elsepc)
@@ -290,16 +296,15 @@ object Continuations:
 
   private case class Lift(coroutine: Option[Coroutine], tree: Tree)
 
-  private def analyzeWithLift(tree: Tree)(using LiftState, Context): Lift =
-    analyze(tree) match
+  private def analyzeWithLift(tpe: Type)(tree: Tree)(using LiftState, Context): Lift =
+    analyze(tpe)(tree) match
       case t: Tree => Lift(None, t)
       case tt: List[Tree] => Lift(None, tt.toTree)
-      case coroutine: Coroutine =>
-        val c = coroutine.mapLastNode { n =>
-          val sym = lifter.make(n.tpe)
-          n.wrap(Assign(ref(sym), _))
-        }.asInstanceOf[Coroutine]
-        Lift(Some(c), ref(lifter.last)) // TODO: Eliminate last
+      case Coroutine(head, nodes :+ last) =>
+        val sym = lifter.make(tpe orElse last.tpe)
+        val wrapped = last.wrap(Assign(ref(sym), _))
+        Lift(Some(Coroutine(head, nodes :+ wrapped)), ref(sym))
+      case Coroutine(_, _) => throw AssertionError("Empty coroutine should never be constructed")
 
   /* === Context extraction === */
   case class CInfo(namess: List[List[TermName]], argss: List[List[Type]], executor: Type, result: Type):
