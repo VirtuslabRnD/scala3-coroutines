@@ -17,6 +17,7 @@ import Types.*
 import typer.Inliner
 import dotty.tools.dotc.core.Names.TermName
 import dotty.tools.dotc.core.Names.TermName
+import dotty.tools.dotc.report
 import dotty.tools.dotc.util.Property
 import dotty.tools.dotc.ast.Trees
 
@@ -28,14 +29,14 @@ object Continuations:
 
     override def transformDefDef(tree: DefDef)(using Context) =
       val orig = tree.symbol.asTerm
-      val coroutine = Option.unless(orig.is(Inline))(orig.info).flatMap(findContext).map { t =>
+      val coroutine = Option.unless(orig.is(Inline) || orig.isAnonymousFunction)(orig.info).flatMap(coroutineInfo).map { cInfo =>
         val sym = orig.copy(
           name = orig.name ++ "$coroutine",
-          info = t.makeType,
+          info = cInfo.coroutineType,
           flags = orig.flags | Synthetic
         ).asTerm.entered
 
-        DefDef(sym, Literal(Constant(null))).withAttachment(CoroutineDefInfo, (tree, t.result))
+        DefDef(sym, Literal(Constant(null))).withAttachment(CoroutineDefInfo, (tree, cInfo.returnType))
       }
 
       coroutine match
@@ -75,8 +76,9 @@ object Continuations:
       case b @ Block((d: DefDef) :: Nil, _) =>
         val coroutine = generateCoroutine(d.rhs, d.symbol.owner, typePrefix, answerType, params)
         Block(coroutine :: Nil, New(coroutine.symbol.asType.typeRef, Nil))
-      case t =>
-        t
+      case t => // TODO filter out things that do not need to be wrapped in a coroutine
+        val coroutine = generateCoroutine(t, NoSymbol, typePrefix, answerType, params)
+        Block(coroutine :: Nil, New(coroutine.symbol.asType.typeRef, Nil))
 
     private def generateCoroutine(rhs: Tree, owner: Symbol, typePrefix: NamedType, answerType: Type, params: Map[Symbol, Tree])(using Context): TypeDef =
       val tpe = TypeRef(typePrefix, "Coroutine".toTypeName).appliedTo(answerType)
@@ -164,6 +166,13 @@ object Continuations:
       Reowner.traverse(block)
 
   /* === analysis === */
+
+  private object ApplyCoroutine:
+    def unapply(tree: Tree)(using Context): Option[(Tree, List[Tree])] =
+      tree match
+        case Apply(Select(Apply(call, args), _), _ :: Nil) if isCoroutineLike(call.symbol.info) => Some(call, args)
+        case Apply(Apply(call, args), _ :: Nil) if isCoroutineLike(call.symbol.info) => Some(call, args)
+        case _ => None
 
   private class LiftState(typePrefix: NamedType, cls: ClassSymbol, params: Map[Symbol, Tree])(using Context):
     private val stackChMod = ref(typePrefix).select("StackChange".toTermName)
@@ -271,7 +280,7 @@ object Continuations:
       left combine Coroutine.suspension(tree.tpe, newState)
 
     // call other coroutine
-    case Apply(Select(Apply(call, args), _), _ :: Nil) if findContext(call.symbol.info).isDefined =>
+    case ApplyCoroutine(call, args) =>
       val argsLifts = (call.symbol.info.paramInfoss.head zip args).map(analyzeWithLift(_)(_))
       val newCall = ref(call.symbol.owner.info.member(call.symbol.name ++ "$coroutine").symbol) // TODO: this doesn't seem to be super reliable
       val newState = lifter.newState
@@ -346,21 +355,53 @@ object Continuations:
 
 
   /* === Context extraction === */
-  case class CInfo(namess: List[List[TermName]], argss: List[List[Type]], executor: Type, result: Type):
-    def makeType(using Context) =
-      def rec(namess: List[List[TermName]], argss: List[List[Type]], executor: Type): Type = (namess, argss) match
-        case (names :: nr, args :: ar) => MethodType(names, args, rec(nr, ar, executor))
-        case (_, _) =>
-          MethodType("$executor".toTermName :: Nil)(_ => executor::Nil, m => m.newParamRef(0).select("Coroutine".toTypeName).appliedTo(result))
-      rec(namess, argss, executor)
+  case class CInfo(coroutineType: Type, returnType: Type)
 
-  private def findContext(tpe: Type)(using Context): Option[CInfo] = tpe match
-    case MethodTpe(names, tpes, ret) => findContext(ret).map(i => i.copy(names :: i.namess, tpes :: i.argss))
-    case defn.ContextFunctionType(params, res, _) =>
-      params.find(_.classSymbol == defn.ContinuationContext)
-        .collect { case TypeRef(exe, _) => exe }
-        .map(CInfo(Nil, Nil, _, res))
-    case _ => None
+  def isCoroutineLike(tpe: Type)(using Context): Boolean = coroutineInfo(tpe).nonEmpty
+
+  // TODO: this could potentially be simplified but there are quite a lot of cases we don't handle yet and we shouldn't allow them to go unnoticed
+  // TODO: Handle (contextual) function returning a contextual function (taking coroutine context as parameter)
+  // Look at CoroutineInfo test for details what should fail
+  private def coroutineInfo(tpe: Type)(using Context): Option[CInfo] = tpe match
+    case mt @ MethodTpe(paramNames, paramTypes, returnType) =>
+      val resultCoroutineInfo = coroutineInfo(returnType)
+      if mt.isContextualMethod && paramTypes.exists(_.classSymbol == defn.ContinuationContext) then
+        paramTypes match
+          case TypeRef(exec, _) :: Nil =>
+            if returnType.isInstanceOf[MethodOrPoly] then
+              report.error("Implementation restriction: Coroutine context cannot be method's non-last contextual parameter")
+              None
+            else
+              resultCoroutineInfo match
+                case Some(_) =>
+                  report.error("Implementation restriction: Coroutine contexts cannot be mixed")
+                  None
+                case None =>
+                  val coroutineType =
+                    MethodType("$executor".toTermName :: Nil)(_ => exec::Nil, m => m.newParamRef(0).select("Coroutine".toTypeName).appliedTo(returnType))
+                  Some(CInfo(coroutineType, returnType))
+          case _ =>
+            report.error("Implementation restriction: Coroutine context has to be in its own parameters list")
+            None
+      else
+        resultCoroutineInfo.map { cInfo =>
+          val coroutineType = mt.newLikeThis(paramNames, paramTypes, cInfo.coroutineType)
+          cInfo.copy(coroutineType = coroutineType)
+        }
+    case defn.ContextFunctionType(paramTypes, returnType, _) =>
+      if paramTypes.exists(_.classSymbol == defn.ContinuationContext) then
+        paramTypes match
+          case TypeRef(exec, _) :: Nil =>
+            val coroutineType =
+              MethodType("$executor".toTermName :: Nil)(_ => exec::Nil, m => m.newParamRef(0).select("Coroutine".toTypeName).appliedTo(returnType))
+            Some(CInfo(coroutineType, returnType))
+          case _ =>
+            report.error("Implementation restriction: Coroutine context has to be in its own parameters list")
+            None
+      else
+        None
+    case _ =>
+      None
 
   /* === coroutines building blocks === */
   private case class Node(init: Tree => Tree, rest: List[Tree], tpe: Type, id: Int)(/* TODO: REMOVE THIS HACK */ using Context) extends printing.Showable:
