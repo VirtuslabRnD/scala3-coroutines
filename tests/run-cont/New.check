@@ -1,0 +1,3 @@
+Right(Foo)
+Right(Bar(10))
+Left(Cannot create new Bar)
