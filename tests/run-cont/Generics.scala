@@ -1,6 +1,7 @@
 import scala.continuations.*
 
-inline def fill[A](n: Int)(a: A): Seq[A] FailWith String = 
+// TODO: This broke for some reason
+inline def fill[A](n: Int)(a: A)(using FailingWith[String]#C): Seq[A] FailWith String = 
   if n >= 0 then
     Seq.fill(n)(a) 
   else

@@ -1,0 +1,4 @@
+Right(FruitSalad(ArraySeq(Banana, Cherry)))
+Left(it's just a carrot)
+Left(beetroot is not a fruit)
+Left(potato is not a fruit)

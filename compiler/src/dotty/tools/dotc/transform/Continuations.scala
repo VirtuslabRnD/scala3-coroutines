@@ -15,8 +15,7 @@ import Symbols.*
 import StdNames.*
 import Types.*
 import typer.Inliner
-import dotty.tools.dotc.core.Names.TermName
-import dotty.tools.dotc.core.Names.TermName
+import Names.Name
 import dotty.tools.dotc.report
 import dotty.tools.dotc.util.Property
 import dotty.tools.dotc.ast.Trees
@@ -47,7 +46,7 @@ object Continuations:
     thisPhase =>
     def phaseName = "continuations"
 
-    override def runsAfter = Set("coroutineStubs")
+    override def runsAfter = Set("coroutineStubs", PatternMatcher.name)
 
     override def transformDefDef(tree: DefDef)(using Context) = tree.getAttachment(CoroutineDefInfo) match
       case Some((origDef, result)) =>
@@ -89,17 +88,19 @@ object Continuations:
       val extractT = TypeRef(typePrefix, "Extract".toTypeName)
       def makeId(id: Int): Tree = Literal(Constant(id))
 
-      given lifter: LiftState = LiftState(typePrefix, cls, params)
-      val analysis = analyze(answerType)(rhs).simplifyOrWrap(lifter.markStackPop)
-      val vars = lifter.liftedTrees
 
+      val gotoResultTpe = OrType.make(stackChT, defn.IntType, false)
 
       val gotoSym = newSymbol(
         owner = cls,
         name = "goto".toTermName,
         flags = Method | Private | Synthetic,
-        info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), defn.IntType :: extractT :: Nil, OrType.make(stackChT, defn.IntType, false))
+        info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), defn.IntType :: extractT :: Nil, gotoResultTpe)
       ).asTerm.entered
+
+      given lifter: LiftState = LiftState(typePrefix, cls, params, gotoSym)
+      val analysis = analyze(answerType)(rhs).simplifyOrWrap(lifter.markStackPop)
+      val vars = lifter.liftedTrees
 
       def gotoRhs(argss: List[List[Tree]]): Tree =
         val (idRef :: extractRef :: Nil) :: Nil = argss: @unchecked
@@ -121,14 +122,23 @@ object Continuations:
       ).asTerm.entered
 
       def dispatchRhs(argss: List[List[Tree]]): Tree =
-        def makeCase(name: String, tpe: Type)(body: Tree => Tree) =
-          val sym = newSymbol(dispatchSym, name.toTermName, Case | Synthetic, tpe)
-          CaseDef(Bind(sym, Typed(Underscore(tpe), TypeTree(tpe))), EmptyTree, body(ref(sym)))
-
         val (idRef :: extractRef :: Nil) :: Nil = argss: @unchecked
-        val stCase = makeCase("st", stackChT)(identity)
-        val idCase = makeCase("id", defn.IntType)(ref(dispatchSym).appliedTo(_, Literal(Constant(null)).asInstance(extractT)))
-        Match(ref(gotoSym).appliedTo(idRef, extractRef), stCase :: idCase :: Nil)
+        val stateOrIdSym = newSymbol(
+          owner = dispatchSym,
+          name = "stateOrId".toTermName,
+          flags = Synthetic,
+          info = OrType(stackChT, defn.IntType, soft = false)
+        )
+        val stateOrIdRhs = ref(gotoSym).appliedTo(idRef, extractRef)
+        val resultValDef = ValDef(stateOrIdSym, stateOrIdRhs)
+        val cond = ref(stateOrIdSym).select(defn.Any_isInstanceOf).appliedToType(stackChT)
+        val ifTrue = ref(stateOrIdSym).select(defn.Any_asInstanceOf).appliedToType(stackChT)
+        val ifFalse = ref(dispatchSym).appliedTo(
+          ref(stateOrIdSym).select(defn.Any_asInstanceOf).appliedToType(defn.IntType),
+          Literal(Constant(null)).asInstance(extractT)
+        )
+        val ifExpr = If(cond, ifTrue, ifFalse)
+        Block(List(resultValDef), ifExpr)
       end dispatchRhs
 
       val dispatchTree = DefDef(dispatchSym, dispatchRhs)
@@ -174,7 +184,7 @@ object Continuations:
         case Apply(Apply(call, args), _ :: Nil) if isCoroutineLike(call.symbol.info) => Some(call, args)
         case _ => None
 
-  private class LiftState(typePrefix: NamedType, cls: ClassSymbol, params: Map[Symbol, Tree])(using Context):
+  private class LiftState(typePrefix: NamedType, cls: ClassSymbol, params: Map[Symbol, Tree], val gotoSym: Symbol)(using Context):
     private val stackChMod = ref(typePrefix).select("StackChange".toTermName)
     private val stackPop = stackChMod.select("Pop".toTermName).select(nme.apply)
     private val stackPush = stackChMod.select("Push".toTermName).select(nme.apply)
@@ -186,6 +196,7 @@ object Continuations:
     private var counter: Int = 0
     private var rhses: Map[Symbol, Tree] = Map.empty
     private var symbols: List[TermSymbol] = Nil
+    private var statesOfLabels = Map.empty[Name, (Int, Symbol)]
     private val lifted = mutable.Map[Symbol, Symbol]()
 
     def makeMethod(original: Symbol, rhs: Tree)(using Context) =
@@ -231,6 +242,13 @@ object Continuations:
       states += 1
       states
 
+    def hasLabel(name: Name): Boolean = statesOfLabels.isDefinedAt(name)
+
+    def labelStateWithSym(name: Name): (Int, Symbol) = statesOfLabels(name)
+
+    def rememberLabel(name: Name, state: Int, sym: Symbol): Unit =
+      statesOfLabels += name -> (state, sym)
+
     def markProgress(to: Int)(tree: Tree): Tree =
       progress.appliedTo(tree, Literal(Constant(to)))
 
@@ -261,6 +279,7 @@ object Continuations:
     case Typed(expr, tpt) => analyze(tpt.tpe)(expr).simplifyOrWrap(cpy.Typed(tree)(_, tpt))
     case Select(qual, name) => analyze(NoType)(qual).simplifyOrWrap(cpy.Select(tree)(_, name))
     case TypeApply(fn, args) => analyze(NoType)(fn).simplifyOrWrap(cpy.TypeApply(tree)(_, args))
+    case New(tp) => cpy.New(tree)(tp)
 
     // always lifted:
     case v: ValDef =>
@@ -317,12 +336,35 @@ object Continuations:
             elsel.headless combine
             Coroutine(Nil, Node(_ => ref(sym), Nil, commonTpe, newState) :: Nil)
 
-    // may be lcoal reference that was lifted
+    case Labeled(bind, expr) =>
+      val newState = lifter.newState
+      val sym = lifter.make(tpe)
+      lifter.rememberLabel(bind.name, newState, sym)
+      val exprLift = analyzeWithLift(tpe)(expr)
+      analyze(tpe)(expr) combine Coroutine(Nil, Node(_ => ref(sym), Nil, tree.tpe, newState) :: Nil)
+
+    // We don't jump out of a state of a coroutine unless we jump out of the coroutine altogether
+    case Return(expr, from) =>
+      from match
+        case Ident(labelName) if lifter.hasLabel(labelName) =>
+          val (labelReturnStateId, labelReturnValSym) = lifter.labelStateWithSym(labelName)
+          val foo = analyze(labelReturnValSym.info)(expr) match
+            case tt: Trees => Assign(ref(labelReturnValSym), tt.toTree)
+            case coroutine: Coroutine =>
+              coroutine.mapLastNode { n =>
+                n.wrap(Assign(ref(labelReturnValSym), _))
+              }
+          val bar = cpy.Return(tree)(Literal(Constant(labelReturnStateId)), ref(lifter.gotoSym))
+          foo combine bar
+        case _ => analyze(NoType)(expr).simplifyOrWrap(cpy.Return(tree)(_, from)) // TODO handle subcases?
+
+    // may be local reference that was lifted
     case t: Ident =>
       lifter.translateRef(t)
 
     // do not need transformations:
     case _: Literal  => tree
+    case EmptyTree => tree
 
     // debug case TODO: remove
     case _ =>
@@ -388,6 +430,11 @@ object Continuations:
           val coroutineType = mt.newLikeThis(paramNames, paramTypes, cInfo.coroutineType)
           cInfo.copy(coroutineType = coroutineType)
         }
+    case pt: PolyType =>
+      coroutineInfo(pt.resType).map { cInfo =>
+        val coroutineType = pt.newLikeThis(pt.paramNames, pt.paramInfos, cInfo.coroutineType)
+        cInfo.copy(coroutineType = coroutineType)
+      }
     case defn.ContextFunctionType(paramTypes, returnType, _) =>
       if paramTypes.exists(_.classSymbol == defn.ContinuationContext) then
         paramTypes match

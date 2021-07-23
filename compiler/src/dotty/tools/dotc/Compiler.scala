@@ -67,7 +67,6 @@ class Compiler {
          new ExpandSAMs,             // Expand single abstract method closures to anonymous classes
          new init.Checker) ::        // Check initialization of objects
     List(new Continuations.CoroutineStubs) ::
-    List(new Continuations.Transform) ::
     List(new ElimRepeated,           // Rewrite vararg parameters and arguments
          new ProtectedAccessors,     // Add accessors for protected members
          new ExtensionMethods,       // Expand methods of value classes with extension methods
@@ -101,6 +100,7 @@ class Compiler {
          new TupleOptimizations,     // Optimize generic operations on tuples
          new LetOverApply,           // Lift blocks from receivers of applications
          new ArrayConstructors) ::   // Intercept creation of (non-generic) arrays and intrinsify.
+    List(new Continuations.Transform) ::
     List(new Erasure) ::             // Rewrite types to JVM model, erasing all type parameters, abstract types and refinements.
     List(new ElimErasedValueType,    // Expand erased value types to their underlying implmementation types
          new PureStats,              // Remove pure stats from blocks
