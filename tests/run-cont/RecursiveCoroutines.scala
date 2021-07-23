@@ -17,3 +17,4 @@ import scala.continuations.*
 
 def rec(list: List[Double]): List[Int] FailWith Double =
   if list == Nil then Nil else if list.head.isWhole then list.head.toInt :: rec(list.tail) else fail(list.head)
+

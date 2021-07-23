@@ -118,7 +118,7 @@ class CompilationTests {
 
   // Negative tests ------------------------------------------------------------
 
-  @Ignore @Test def negAll: Unit = {
+  @Test def negAll: Unit = {
     implicit val testGroup: TestGroup = TestGroup("compileNeg")
     aggregateTests(
       compileFilesInDir("tests/neg", defaultOptions),
@@ -174,6 +174,7 @@ class CompilationTests {
       compileFile("tests/neg-custom-args/matchable.scala", defaultOptions.and("-Xfatal-warnings", "-source", "future")),
       compileFile("tests/neg-custom-args/i7314.scala", defaultOptions.and("-Xfatal-warnings", "-source", "future")),
       compileFile("tests/neg-custom-args/feature-shadowing.scala", defaultOptions.and("-Xfatal-warnings", "-feature")),
+      compileFilesInDir("tests/neg-cont", defaultOptions.withClasspath(contClasspath).withRunClasspath(contClasspath))
     ).checkExpectedErrors()
   }
 
