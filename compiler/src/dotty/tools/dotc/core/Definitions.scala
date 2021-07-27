@@ -133,8 +133,7 @@ class Definitions {
           ClassInfo(ScalaPackageClass.thisType, cls, ObjectType :: Nil, decls)
       }
     }
-    val flags0 = Trait | NoInits
-    val flags = if (name.isContextFunction) flags0 | Final else flags0
+    val flags = Trait | NoInits
     newPermanentClassSymbol(ScalaPackageClass, name, flags, completer)
   }
 
@@ -234,6 +233,7 @@ class Definitions {
     @tu lazy val Compiletime_constValue   : Symbol = CompiletimePackageClass.requiredMethod("constValue")
     @tu lazy val Compiletime_constValueOpt: Symbol = CompiletimePackageClass.requiredMethod("constValueOpt")
     @tu lazy val Compiletime_summonFrom   : Symbol = CompiletimePackageClass.requiredMethod("summonFrom")
+    @tu lazy val Compiletime_summonInline   : Symbol = CompiletimePackageClass.requiredMethod("summonInline")
   @tu lazy val CompiletimeTestingPackage: Symbol = requiredPackage("scala.compiletime.testing")
     @tu lazy val CompiletimeTesting_typeChecks: Symbol = CompiletimeTestingPackage.requiredMethod("typeChecks")
     @tu lazy val CompiletimeTesting_typeCheckErrors: Symbol = CompiletimeTestingPackage.requiredMethod("typeCheckErrors")
@@ -890,6 +890,7 @@ class Definitions {
   @tu lazy val ImplicitAmbiguousAnnot: ClassSymbol = requiredClass("scala.annotation.implicitAmbiguous")
   @tu lazy val ImplicitNotFoundAnnot: ClassSymbol = requiredClass("scala.annotation.implicitNotFound")
   @tu lazy val InlineParamAnnot: ClassSymbol = requiredClass("scala.annotation.internal.InlineParam")
+  @tu lazy val ErasedParamAnnot: ClassSymbol = requiredClass("scala.annotation.internal.ErasedParam")
   @tu lazy val InvariantBetweenAnnot: ClassSymbol = requiredClass("scala.annotation.internal.InvariantBetween")
   @tu lazy val MainAnnot: ClassSymbol = requiredClass("scala.main")
   @tu lazy val MigrationAnnot: ClassSymbol = requiredClass("scala.annotation.migration")
@@ -909,6 +910,7 @@ class Definitions {
   @tu lazy val ConstructorOnlyAnnot: ClassSymbol = requiredClass("scala.annotation.constructorOnly")
   @tu lazy val CompileTimeOnlyAnnot: ClassSymbol = requiredClass("scala.annotation.compileTimeOnly")
   @tu lazy val SwitchAnnot: ClassSymbol = requiredClass("scala.annotation.switch")
+  @tu lazy val ExperimentalAnnot: ClassSymbol = requiredClass("scala.annotation.experimental")
   @tu lazy val ThrowsAnnot: ClassSymbol = requiredClass("scala.throws")
   @tu lazy val TransientAnnot: ClassSymbol = requiredClass("scala.transient")
   @tu lazy val UncheckedAnnot: ClassSymbol = requiredClass("scala.unchecked")
@@ -1038,13 +1040,13 @@ class Definitions {
 
   /** An extractor for multi-dimensional arrays.
    *  Note that this will also extract the high bound if an
-   *  element type is a wildcard. E.g.
+   *  element type is a wildcard upper-bounded by an array. E.g.
    *
    *     Array[? <: Array[? <: Number]]
    *
    *  would match
    *
-   *     MultiArrayOf(<Number>, 2)
+   *     MultiArrayOf(<? <: Number>, 2)
    */
   object MultiArrayOf {
     def apply(elem: Type, ndims: Int)(using Context): Type =
@@ -1052,7 +1054,8 @@ class Definitions {
     def unapply(tp: Type)(using Context): Option[(Type, Int)] = tp match {
       case ArrayOf(elemtp) =>
         def recur(elemtp: Type): Option[(Type, Int)] = elemtp.dealias match {
-          case TypeBounds(lo, hi) => recur(hi)
+          case tp @ TypeBounds(lo, hi @ MultiArrayOf(finalElemTp, n)) =>
+            Some(finalElemTp, n)
           case MultiArrayOf(finalElemTp, n) => Some(finalElemTp, n + 1)
           case _ => Some(elemtp, 1)
         }

@@ -27,6 +27,7 @@ abstract class CommunityBuildTest:
       )
       return
     self.dependencies.foreach(_.publish())
+    self.testOnlyDependencies().foreach(_.publish())
     suite.test(self)
 
   /** Build the given project with the published local compiler and sbt plugin.
@@ -96,6 +97,7 @@ class CommunityBuildTestA extends CommunityBuildTest:
   @Test def izumiReflect = projects.izumiReflect.run()
   @Test def scalaSTM = projects.scalaSTM.run()
   @Test def scalatest = projects.scalatest.run()
+  @Test def scalatestplusTestNG = projects.scalatestplusTestNG.run()
   // 'Sciss/Lucre' dependencies:
   // @Test def scissEqual      = projects.scissEqual     .run()
   // @Test def scissFingerTree = projects.scissFingerTree.run()
@@ -112,15 +114,17 @@ end CommunityBuildTestA
 @Category(Array(classOf[TestCategory]))
 class CommunityBuildTestB extends CommunityBuildTest:
   @Test def cats = projects.cats.run()
-  @Test def catsEffect2 = projects.catsEffect2.run()
   @Test def catsEffect3 = projects.catsEffect3.run()
   @Test def catsMtl = projects.catsMtl.run()
   @Test def coop = projects.coop.run()
   @Test def discipline = projects.discipline.run()
   @Test def disciplineMunit = projects.disciplineMunit.run()
   @Test def disciplineSpecs2 = projects.disciplineSpecs2.run()
+  @Test def fs2 = projects.fs2.run()
   @Test def munit = projects.munit.run()
+  @Test def munitCatsEffect = projects.munitCatsEffect.run()
   @Test def perspective = projects.perspective.run()
+  @Test def scalacheckEffect = projects.scalacheckEffect.run()
   @Test def scodec = projects.scodec.run()
   @Test def scodecBits = projects.scodecBits.run()
   @Test def simulacrumScalafixAnnotations = projects.simulacrumScalafixAnnotations.run()
@@ -157,7 +161,7 @@ class CommunityBuildTestC extends CommunityBuildTest:
   @Test def scalatestplusScalacheck = projects.scalatestplusScalacheck.run()
   @Test def scalaXml = projects.scalaXml.run()
   @Test def scalaz = projects.scalaz.run()
-  @Test def scas = if compilerSupportExperimental then projects.scas.run()
+  @Test def scas = projects.scas.run()
   @Test def sconfig = projects.sconfig.run()
   @Test def shapeless = projects.shapeless.run()
   @Test def sourcecode = projects.sourcecode.run()

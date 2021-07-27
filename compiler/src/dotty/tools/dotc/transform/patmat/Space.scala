@@ -72,7 +72,7 @@ case class Typ(tp: Type, decomposed: Boolean = true) extends Space
 case class Prod(tp: Type, unappTp: TermRef, params: List[Space]) extends Space
 
 /** Union of spaces */
-case class Or(spaces: List[Space]) extends Space
+case class Or(spaces: Seq[Space]) extends Space
 
 /** abstract space logic */
 trait SpaceLogic {
@@ -113,44 +113,37 @@ trait SpaceLogic {
   /** Display space in string format */
   def show(sp: Space): String
 
-  /** Simplify space using the laws, there's no nested union after simplify
-   *
-   *  @param aggressive if true and OR space has less than 5 components, `simplify` will
-   *                    collapse `sp1 | sp2` to `sp1` if `sp2` is a subspace of `sp1`.
-   *
-   *                    This reduces noise in counterexamples.
-   */
-  def simplify(space: Space, aggressive: Boolean = false)(using Context): Space = trace(s"simplify ${show(space)}, aggressive = $aggressive --> ", debug, x => show(x.asInstanceOf[Space]))(space match {
+  /** Simplify space such that a space equal to `Empty` becomes `Empty` */
+  def simplify(space: Space)(using Context): Space = trace(s"simplify ${show(space)} --> ", debug, x => show(x.asInstanceOf[Space]))(space match {
     case Prod(tp, fun, spaces) =>
-      val sp = Prod(tp, fun, spaces.map(simplify(_)))
-      if (sp.params.contains(Empty)) Empty
+      val sps = spaces.map(simplify(_))
+      if (sps.contains(Empty)) Empty
       else if (canDecompose(tp) && decompose(tp).isEmpty) Empty
-      else sp
+      else Prod(tp, fun, sps)
     case Or(spaces) =>
-      val buf = new mutable.ListBuffer[Space]
-      def include(s: Space) = if s != Empty then buf += s
-      for space <- spaces do
-        simplify(space) match
-          case Or(ss) => ss.foreach(include)
-          case s => include(s)
-      val set = buf.toList
-
-      if (set.isEmpty) Empty
-      else if (set.size == 1) set.toList(0)
-      else if (aggressive && spaces.size < 5) {
-        val res = set.map(sp => (sp, set.filter(_ ne sp))).find {
-          case (sp, sps) =>
-            isSubspace(sp, Or(sps))
-        }
-        if (res.isEmpty) Or(set)
-        else simplify(Or(res.get._2), aggressive)
-      }
-      else Or(set)
+      val spaces2 = spaces.map(simplify(_)).filter(_ != Empty)
+      if spaces2.isEmpty then Empty
+      else if spaces2.lengthCompare(1) == 0 then spaces2.head
+      else Or(spaces2)
     case Typ(tp, _) =>
       if (canDecompose(tp) && decompose(tp).isEmpty) Empty
       else space
     case _ => space
   })
+
+  /** Remove a space if it's a subspace of remaining spaces
+   *
+   *  Note: `dedup` will return the same result if the sequence >= 10
+   */
+  def dedup(spaces: Seq[Space])(using Context): Seq[Space] =
+    if (spaces.lengthCompare(1) <= 0 || spaces.lengthCompare(10) >= 0) spaces
+    else {
+      val res = spaces.map(sp => (sp, spaces.filter(_ ne sp))).find {
+        case (sp, sps) => isSubspace(sp, Or(LazyList(sps: _*)))
+      }
+      if (res.isEmpty) spaces
+      else res.get._2
+    }
 
   /** Flatten space to get rid of `Or` for pretty print */
   def flatten(space: Space)(using Context): Seq[Space] = space match {
@@ -205,8 +198,8 @@ trait SpaceLogic {
 
     (a, b) match {
       case (Empty, _) | (_, Empty) => Empty
-      case (_, Or(ss)) => Or(ss.map(intersect(a, _)).filterConserve(_ ne Empty))
-      case (Or(ss), _) => Or(ss.map(intersect(_, b)).filterConserve(_ ne Empty))
+      case (_, Or(ss)) => Or(ss.map(intersect(a, _)).filter(_ ne Empty))
+      case (Or(ss), _) => Or(ss.map(intersect(_, b)).filter(_ ne Empty))
       case (Typ(tp1, _), Typ(tp2, _)) =>
         if (isSubType(tp1, tp2)) a
         else if (isSubType(tp2, tp1)) b
@@ -251,10 +244,10 @@ trait SpaceLogic {
           tryDecompose1(tp1)
         else
           a
-      case (_, Or(ss)) =>
-        ss.foldLeft(a)(minus)
       case (Or(ss), _) =>
         Or(ss.map(minus(_, b)))
+      case (_, Or(ss)) =>
+        ss.foldLeft(a)(minus)
       case (Prod(tp1, fun, ss), Typ(tp2, _)) =>
         // uncovered corner case: tp2 :< tp1, may happen when inheriting case class
         if (isSubType(tp1, tp2))
@@ -263,8 +256,6 @@ trait SpaceLogic {
            Empty
         else if (canDecompose(tp2))
           tryDecompose2(tp2)
-        else if (isSubType(tp2, tp1) &&covers(fun, tp2))
-          minus(a, Prod(tp1, fun, signature(fun, tp1, ss.length).map(Typ(_, false))))
         else
           a
       case (Prod(tp1, fun1, ss1), Prod(tp2, fun2, ss2)) =>
@@ -282,7 +273,10 @@ trait SpaceLogic {
         else if cache.forall(sub => isSubspace(sub, Empty)) then Empty
         else
           // `(_, _, _) - (Some, None, _)` becomes `(None, _, _) | (_, Some, _) | (_, _, Empty)`
-          Or(range.map { i => Prod(tp1, fun1, ss1.updated(i, sub(i))) })
+          val spaces = LazyList(range: _*).flatMap { i =>
+            flatten(sub(i)).map(s => Prod(tp1, fun1, ss1.updated(i, s)))
+          }
+          Or(spaces)
     }
   }
 }
@@ -326,18 +320,10 @@ class SpaceEngine(using Context) extends SpaceLogic {
   private val scalaConsType        = defn.ConsClass.typeRef
 
   private val constantNullType     = ConstantType(Constant(null))
-  private val constantNullSpace    = Typ(constantNullType)
 
   /** Does the given tree stand for the literal `null`? */
   def isNullLit(tree: Tree): Boolean = tree match {
     case Literal(Constant(null)) => true
-    case _ => false
-  }
-
-  /** Does the given space contain just the value `null`? */
-  def isNullSpace(space: Space): Boolean = space match {
-    case Typ(tpe, _) => tpe.dealias == constantNullType || tpe.isNullType
-    case Or(spaces) => spaces.forall(isNullSpace)
     case _ => false
   }
 
@@ -361,18 +347,18 @@ class SpaceEngine(using Context) extends SpaceLogic {
   def project(pat: Tree): Space = pat match {
     case Literal(c) =>
       if (c.value.isInstanceOf[Symbol])
-        Typ(c.value.asInstanceOf[Symbol].termRef, false)
+        Typ(c.value.asInstanceOf[Symbol].termRef, decomposed = false)
       else
-        Typ(ConstantType(c), false)
+        Typ(ConstantType(c), decomposed = false)
 
     case pat: Ident if isBackquoted(pat) =>
-      Typ(pat.tpe, false)
+      Typ(pat.tpe, decomposed = false)
 
     case Ident(nme.WILDCARD) =>
-      Or(Typ(erase(pat.tpe.stripAnnots), false) :: constantNullSpace :: Nil)
+      Typ(erase(pat.tpe.stripAnnots, isValue = true), decomposed = false)
 
     case Ident(_) | Select(_, _) =>
-      Typ(erase(pat.tpe.stripAnnots), false)
+      Typ(erase(pat.tpe.stripAnnots, isValue = true), decomposed = false)
 
     case Alternative(trees) =>
       Or(trees.map(project(_)))
@@ -392,31 +378,31 @@ class SpaceEngine(using Context) extends SpaceLogic {
         else {
           val (arity, elemTp, resultTp) = unapplySeqInfo(fun.tpe.widen.finalResultType, fun.srcPos)
           if (elemTp.exists)
-            Prod(erase(pat.tpe.stripAnnots), funRef, projectSeq(pats) :: Nil)
+            Prod(erase(pat.tpe.stripAnnots, isValue = false), funRef, projectSeq(pats) :: Nil)
           else
-            Prod(erase(pat.tpe.stripAnnots), funRef, pats.take(arity - 1).map(project) :+ projectSeq(pats.drop(arity - 1)))
+            Prod(erase(pat.tpe.stripAnnots, isValue = false), funRef, pats.take(arity - 1).map(project) :+ projectSeq(pats.drop(arity - 1)))
         }
       else
-        Prod(erase(pat.tpe.stripAnnots), funRef, pats.map(project))
+        Prod(erase(pat.tpe.stripAnnots, isValue = false), funRef, pats.map(project))
 
     case Typed(pat @ UnApply(_, _, _), _) =>
       project(pat)
 
-    case Typed(expr, _) =>
-      Typ(erase(expr.tpe.stripAnnots), true)
+    case Typed(_, tpt) =>
+      Typ(erase(tpt.tpe.stripAnnots, isValue = true), decomposed = false)
 
     case This(_) =>
-      Typ(pat.tpe.stripAnnots, false)
+      Typ(pat.tpe.stripAnnots, decomposed = false)
 
     case EmptyTree =>         // default rethrow clause of try/catch, check tests/patmat/try2.scala
-      Typ(WildcardType, false)
+      Typ(WildcardType, decomposed = false)
 
     case Block(Nil, expr) =>
       project(expr)
 
     case _ =>
       // Pattern is an arbitrary expression; assume a skolem (i.e. an unknown value) of the pattern type
-      Typ(pat.tpe.narrow, false)
+      Typ(pat.tpe.narrow, decomposed = false)
   }
 
   private def project(tp: Type): Space = tp match {
@@ -464,29 +450,37 @@ class SpaceEngine(using Context) extends SpaceLogic {
    *       case (IntExpr(_), IntExpr(_)) =>
    *       case (BooleanExpr(_), BooleanExpr(_)) =>
    *     }
+   *
+   *  @param inArray whether `tp` is a type argument to `Array`
+   *  @param isValue whether `tp` is the type which match against values
+   *
+   *  If `isValue` is true, then pattern-bound symbols are erased to its upper bound.
+   *  This is needed to avoid spurious unreachable warnings. See tests/patmat/i6197.scala.
    */
-  private def erase(tp: Type, inArray: Boolean = false): Type = trace(i"$tp erased to", debug) {
+  private def erase(tp: Type, inArray: Boolean = false, isValue: Boolean = false): Type = trace(i"$tp erased to", debug) {
 
     tp match {
       case tp @ AppliedType(tycon, args) =>
         if tycon.typeSymbol.isPatternBound then return WildcardType
 
         val args2 =
-          if (tycon.isRef(defn.ArrayClass)) args.map(arg => erase(arg, inArray = true))
-          else args.map(arg => erase(arg, inArray = false))
-        tp.derivedAppliedType(erase(tycon, inArray), args2)
+          if (tycon.isRef(defn.ArrayClass)) args.map(arg => erase(arg, inArray = true, isValue = false))
+          else args.map(arg => erase(arg, inArray = false, isValue = false))
+        tp.derivedAppliedType(erase(tycon, inArray, isValue = false), args2)
 
       case tp @ OrType(tp1, tp2) =>
-        OrType(erase(tp1, inArray), erase(tp2, inArray), tp.isSoft)
+        OrType(erase(tp1, inArray, isValue), erase(tp2, inArray, isValue), tp.isSoft)
 
       case AndType(tp1, tp2) =>
-        AndType(erase(tp1, inArray), erase(tp2, inArray))
+        AndType(erase(tp1, inArray, isValue), erase(tp2, inArray, isValue))
 
       case tp @ RefinedType(parent, _, _) =>
-        erase(parent)
+        erase(parent, inArray, isValue)
 
       case tref: TypeRef if tref.symbol.isPatternBound =>
-        if (inArray) tref.underlying else WildcardType
+        if inArray then tref.underlying
+        else if isValue then tref.superType
+        else WildcardType
 
       case _ => tp
     }
@@ -535,7 +529,7 @@ class SpaceEngine(using Context) extends SpaceLogic {
       case mt: MethodType => mt
       case pt: PolyType   =>
         inContext(ctx.fresh.setExploreTyperState()) {
-          val tvars = pt.paramInfos.map(newTypeVar)
+          val tvars = pt.paramInfos.map(newTypeVar(_))
           val mt = pt.instantiate(tvars).asInstanceOf[MethodType]
           scrutineeTp <:< mt.paramInfos(0)
           // force type inference to infer a narrower type: could be singleton
@@ -601,7 +595,7 @@ class SpaceEngine(using Context) extends SpaceLogic {
     tp.dealias match {
       case AndType(tp1, tp2) =>
         intersect(Typ(tp1, false), Typ(tp2, false)) match {
-          case Or(spaces) => spaces
+          case Or(spaces) => spaces.toList
           case Empty => Nil
           case space => List(space)
         }
@@ -781,7 +775,7 @@ class SpaceEngine(using Context) extends SpaceLogic {
         if (ctx.definitions.isTupleType(tp))
           "(" + params.map(doShow(_)).mkString(", ") + ")"
         else if (tp.isRef(scalaConsType.symbol))
-          if (flattenList) params.map(doShow(_, flattenList)).mkString(", ")
+          if (flattenList) params.map(doShow(_, flattenList)).filter(_.nonEmpty).mkString(", ")
           else params.map(doShow(_, flattenList = true)).filter(!_.isEmpty).mkString("List(", ", ", ")")
         else {
           val sym = fun.symbol
@@ -799,21 +793,27 @@ class SpaceEngine(using Context) extends SpaceLogic {
   private def exhaustivityCheckable(sel: Tree): Boolean = {
     // Possible to check everything, but be compatible with scalac by default
     def isCheckable(tp: Type): Boolean =
-      !tp.hasAnnotation(defn.UncheckedAnnot) && {
-        val tpw = tp.widen.dealias
-        ctx.settings.YcheckAllPatmat.value ||
-        tpw.typeSymbol.is(Sealed) ||
-        tpw.isInstanceOf[OrType] ||
-        (tpw.isInstanceOf[AndType] && {
-          val and = tpw.asInstanceOf[AndType]
-          isCheckable(and.tp1) || isCheckable(and.tp2)
-        }) ||
-        tpw.isRef(defn.BooleanClass) ||
-        tpw.typeSymbol.isAllOf(JavaEnumTrait) ||
-        (defn.isTupleType(tpw) && tpw.argInfos.exists(isCheckable(_)))
-      }
+      val tpw = tp.widen.dealias
+      val classSym = tpw.classSymbol
+      classSym.is(Sealed) ||
+      tpw.isInstanceOf[OrType] ||
+      (tpw.isInstanceOf[AndType] && {
+        val and = tpw.asInstanceOf[AndType]
+        isCheckable(and.tp1) || isCheckable(and.tp2)
+      }) ||
+      tpw.isRef(defn.BooleanClass) ||
+      classSym.isAllOf(JavaEnumTrait)
 
-    val res = isCheckable(sel.tpe)
+    val res = !sel.tpe.hasAnnotation(defn.UncheckedAnnot) && {
+      ctx.settings.YcheckAllPatmat.value
+      || isCheckable(sel.tpe)
+      || {
+        val tpw = sel.tpe.widen.dealias
+        val classSym = tpw.classSymbol
+        classSym.is(Case) && productSelectorTypes(tpw, sel.srcPos).exists(isCheckable(_))
+      }
+    }
+
     debug.println(s"exhaustivity checkable: ${sel.show} = $res")
     res
   }
@@ -842,14 +842,15 @@ class SpaceEngine(using Context) extends SpaceLogic {
     val checkGADTSAT = shouldCheckExamples(selTyp)
 
     val uncovered =
-      flatten(simplify(minus(project(selTyp), patternSpace), aggressive = true)).filter { s =>
+      flatten(simplify(minus(project(selTyp), patternSpace))).filter({ s =>
         s != Empty && (!checkGADTSAT || satisfiable(s))
-      }
+      })
 
 
     if uncovered.nonEmpty then
       val hasMore = uncovered.lengthCompare(6) > 0
-      report.warning(PatternMatchExhaustivity(show(uncovered.take(6)), hasMore), sel.srcPos)
+      val deduped = dedup(uncovered.take(6))
+      report.warning(PatternMatchExhaustivity(show(deduped), hasMore), sel.srcPos)
   }
 
   private def redundancyCheckable(sel: Tree): Boolean =
@@ -863,25 +864,28 @@ class SpaceEngine(using Context) extends SpaceLogic {
     && !sel.tpe.widen.isRef(defn.QuotedTypeClass)
 
   def checkRedundancy(_match: Match): Unit = {
+    debug.println(s"---------------checking redundant patterns ${_match.show}")
+
     val Match(sel, cases) = _match
     val selTyp = sel.tpe.widen.dealias
 
     if (!redundancyCheckable(sel)) return
 
     val targetSpace =
-      if (ctx.explicitNulls || selTyp.classSymbol.isPrimitiveValueClass)
+      if !selTyp.classSymbol.isNullableClass then
         project(selTyp)
       else
         project(OrType(selTyp, constantNullType, soft = false))
 
     // in redundancy check, take guard as false in order to soundly approximate
-    def projectPrevCases(cases: List[CaseDef]): List[Space] =
-      cases.map { x =>
+    val spaces = cases.map { x =>
+      val res =
         if (x.guard.isEmpty) project(x.pat)
         else Empty
-      }
 
-    val spaces = projectPrevCases(cases)
+      debug.println(s"${x.pat.show} ====> ${res}")
+      res
+    }
 
     (1 until cases.length).foreach { i =>
       val pat = cases(i).pat
@@ -901,18 +905,13 @@ class SpaceEngine(using Context) extends SpaceLogic {
         if (covered == Empty && !isNullLit(pat)) covered = curr
 
         if (isSubspace(covered, prevs)) {
-          report.warning(MatchCaseUnreachable(), pat.srcPos)
-        }
-
-        // if last case is `_` and only matches `null`, produce a warning
-        // If explicit nulls are enabled, this check isn't needed because most of the cases
-        // that would trigger it would also trigger unreachability warnings.
-        if (!ctx.explicitNulls && i == cases.length - 1 && !isNullLit(pat) ) {
-          simplify(minus(covered, prevs)) match {
-            case Typ(`constantNullType`, _) =>
-              report.warning(MatchCaseOnlyNullWarning(), pat.srcPos)
-            case _ =>
-          }
+          if i == cases.length - 1
+             && isWildcardArg(pat)
+             && pat.tpe.classSymbol.isNullableClass
+          then
+            report.warning(MatchCaseOnlyNullWarning(), pat.srcPos)
+          else
+            report.warning(MatchCaseUnreachable(), pat.srcPos)
         }
       }
     }

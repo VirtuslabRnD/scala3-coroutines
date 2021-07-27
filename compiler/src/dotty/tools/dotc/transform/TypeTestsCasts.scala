@@ -28,7 +28,7 @@ import config.Printers.{ transforms => debug }
 object TypeTestsCasts {
   import ast.tpd._
   import typer.Inferencing.maximizeType
-  import typer.ProtoTypes.{ constrained, newTypeVar }
+  import typer.ProtoTypes.constrained
 
   /** Whether `(x:X).isInstanceOf[P]` can be checked at runtime?
    *
@@ -345,7 +345,7 @@ object TypeTestsCasts {
           val argType = tree.args.head.tpe
           val isTrusted = tree.hasAttachment(PatternMatcher.TrustedTypeTestKey)
           if (!isTrusted && !checkable(expr.tpe, argType, tree.span))
-            report.warning(i"the type test for $argType cannot be checked at runtime", tree.srcPos)
+            report.warning(i"the type test for $argType cannot be checked at runtime", expr.srcPos)
           transformTypeTest(expr, tree.args.head.tpe, flagUnrelated = true)
         }
         else if (sym.isTypeCast)

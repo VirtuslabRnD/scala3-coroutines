@@ -107,7 +107,7 @@ class StaticSiteContext(
         val processedTemplate = // Set provided name as arg in page for `docs`
           if from.getParentFile.toPath == docsPath && templateFile.isIndexPage() then
             if templateFile.title != "index" then
-              report.warn("Property `title` will be overriden by project name", from)
+              report.warn("Property `title` will be overridden by project name", from)
 
             templateFile.copy(title = args.name)
           else templateFile
@@ -146,13 +146,16 @@ class StaticSiteContext(
         if link.startsWith("/") then root.toPath.resolve(link.drop(1))
         else template.file.toPath.getParent().resolve(link).normalize()
 
-      baseFile.getFileName.toString.split("\\.").headOption.toSeq.flatMap { baseFileName =>
-        Seq(
-          Some(baseFile.resolveSibling(baseFileName + ".html")),
-          Some(baseFile.resolveSibling(baseFileName + ".md")),
-          Option.when(baseFileName == "index")(baseFile.getParent)
-        ).flatten.filter(Files.exists(_)).map(driFor)
-      }
+      val fileName = baseFile.getFileName.toString
+      val baseFileName = if fileName.endsWith(".md")
+          then fileName.stripSuffix(".md")
+          else fileName.stripSuffix(".html")
+
+      Seq(
+        Some(baseFile.resolveSibling(baseFileName + ".html")),
+        Some(baseFile.resolveSibling(baseFileName + ".md")),
+        Option.when(baseFileName == "index")(baseFile.getParent)
+      ).flatten.filter(Files.exists(_)).map(driFor)
     }.toOption.filter(_.nonEmpty)
     pathsDri.getOrElse(memberLinkResolver(link).toList)
 

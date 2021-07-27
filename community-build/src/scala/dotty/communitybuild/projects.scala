@@ -40,6 +40,7 @@ sealed trait CommunityProject:
   val publishCommand: String
   val docCommand: String
   val dependencies: List[CommunityProject]
+  val testOnlyDependencies: () => List[CommunityProject]
   val binaryName: String
   val runCommandsArgs: List[String] = Nil
   val requiresExperimental: Boolean
@@ -87,6 +88,7 @@ final case class MillCommunityProject(
     project: String,
     baseCommand: String,
     dependencies: List[CommunityProject] = Nil,
+    testOnlyDependencies: () => List[CommunityProject] = () => Nil,
     ignoreDocs: Boolean = false,
     requiresExperimental: Boolean = false,
     ) extends CommunityProject:
@@ -104,6 +106,7 @@ final case class SbtCommunityProject(
     sbtTestCommand: String,
     extraSbtArgs: List[String] = Nil,
     dependencies: List[CommunityProject] = Nil,
+    testOnlyDependencies: () => List[CommunityProject] = () => Nil,
     sbtPublishCommand: String = null,
     sbtDocCommand: String = null,
     scalacOptions: List[String] = SbtCommunityProject.scalacOptions,
@@ -273,15 +276,17 @@ object projects:
     sbtDocCommand = forceDoc("jvm")
   )
 
-  lazy val scalatest = SbtCommunityProject(
+  lazy val scalatest: SbtCommunityProject = SbtCommunityProject(
     project       = "scalatest",
-    sbtTestCommand   = "scalacticDotty/clean;scalacticTestDotty/test; scalatestTestDotty/test",
-    sbtPublishCommand = "scalacticDotty/publishLocal; scalatestDotty/publishLocal",
-    sbtDocCommand = ";scalacticDotty/doc" // fails with missing type ;scalatestDotty/doc"
+    sbtTestCommand   = "scalacticDotty/clean; scalacticDottyJS/clean; scalacticTestDotty/test; scalatestTestDotty/test; scalacticDottyJS/compile; scalatestDottyJS/compile",
+    sbtPublishCommand = "scalacticDotty/publishLocal; scalatestDotty/publishLocal; scalacticDottyJS/publishLocal; scalatestDottyJS/publishLocal",
+    sbtDocCommand = ";scalacticDotty/doc", // fails with missing type ;scalatestDotty/doc"
     // cannot take signature of (test: org.scalatest.concurrent.ConductorFixture#OneArgTest):
     // org.scalatest.Outcome
     // Problem parsing scalatest.dotty/target/scala-3.0.0-M2/src_managed/main/org/scalatest/concurrent/ConductorFixture.scala:[602..624..3843], documentation may not be generated.
     // dotty.tools.dotc.core.MissingType:
+    dependencies = List(scalaXml),
+    testOnlyDependencies = () => List(scalatestplusJunit, scalatestplusTestNG)
   )
 
   lazy val scalatestplusScalacheck = SbtCommunityProject(
@@ -299,9 +304,17 @@ object projects:
     dependencies      = List(scalatest)
   )
 
+  lazy val scalatestplusTestNG = SbtCommunityProject(
+    project = "scalatestplus-testng",
+    sbtTestCommand = "test",
+    sbtPublishCommand = "publishLocal",
+    dependencies = List(scalatest)
+  )
+
   lazy val scalaXml = SbtCommunityProject(
     project       = "scala-xml",
-    sbtTestCommand   = "xml/test",
+    sbtTestCommand = "xml/test",
+    sbtPublishCommand = "xml/publishLocal",
     sbtDocCommand = "xml/doc"
   )
 
@@ -413,7 +426,6 @@ object projects:
     sbtPublishCommand = "coreJVM/publishLocal;coreJS/publishLocal",
     sbtDocCommand   = "coreJVM/doc",
     dependencies = List(munit),
-    requiresExperimental = true,
   )
 
   lazy val scodec = SbtCommunityProject(
@@ -422,7 +434,6 @@ object projects:
     // Adds <empty> package
     sbtDocCommand   = "coreJVM/doc",
     dependencies = List(munit, scodecBits),
-    requiresExperimental = true,
   )
 
   lazy val scalaParserCombinators = SbtCommunityProject(
@@ -464,16 +475,10 @@ object projects:
     sbtDocCommand = ";json-schemaJVM/doc ;algebraJVM/doc; openapiJVM/doc; http4s-server/doc ;http4s-client/doc ;play-server/doc ;play-client/doc ;akka-http-server/doc ;akka-http-client/doc",
   )
 
-  lazy val catsEffect2 = SbtCommunityProject(
-    project        = "cats-effect-2",
-    sbtTestCommand = "test",
-    sbtDocCommand  = ";coreJVM/doc ;lawsJVM/doc",
-    dependencies   = List(cats, disciplineMunit)
-  )
-
   lazy val catsEffect3 = SbtCommunityProject(
     project        = "cats-effect-3",
     sbtTestCommand = "test",
+    sbtPublishCommand = "publishLocal",
     sbtDocCommand  = ";coreJVM/doc ;lawsJVM/doc ;kernelJVM/doc",
     dependencies   = List(cats, coop, disciplineSpecs2, scalacheck)
   )
@@ -507,7 +512,7 @@ object projects:
 
   lazy val disciplineMunit = SbtCommunityProject(
     project = "discipline-munit",
-    sbtTestCommand = "test",
+    sbtTestCommand = "coreJVM/test;coreJS/test",
     sbtPublishCommand = "coreJVM/publishLocal;coreJS/publishLocal",
     dependencies = List(discipline, munit)
   )
@@ -665,6 +670,27 @@ object projects:
     dependencies = List(scalatest, scalatestplusScalacheck),
   )
 
+  lazy val munitCatsEffect = SbtCommunityProject(
+    project = "munit-cats-effect",
+    sbtTestCommand = "ce3JVM/test; ce3JS/test",
+    sbtPublishCommand = "ce3JVM/publishLocal; ce3JS/publishLocal",
+    dependencies = List(munit, catsEffect3)
+  )
+
+  lazy val scalacheckEffect = SbtCommunityProject(
+    project = "scalacheck-effect",
+    sbtTestCommand = "test",
+    sbtPublishCommand = "publishLocal",
+    dependencies = List(cats, catsEffect3, munit, scalacheck)
+  )
+
+  lazy val fs2 = SbtCommunityProject(
+    project = "fs2",
+    sbtTestCommand = "coreJVM/test; coreJS/test",  // io/test requires JDK9+
+    sbtPublishCommand = "coreJVM/publishLocal; coreJS/publishLocal",
+    dependencies = List(cats, catsEffect3, munitCatsEffect, scalacheckEffect, scodecBits)
+  )
+
 end projects
 
 def allProjects = List(
@@ -708,7 +734,6 @@ def allProjects = List(
   projects.dottyCpsAsync,
   projects.scalaz,
   projects.endpoints4s,
-  projects.catsEffect2,
   projects.catsEffect3,
   projects.scalaParallelCollections,
   projects.scalaCollectionCompat,
@@ -736,6 +761,10 @@ def allProjects = List(
   projects.protoquill,
   projects.onnxScala,
   projects.playJson,
+  projects.scalatestplusTestNG,
+  projects.munitCatsEffect,
+  projects.scalacheckEffect,
+  projects.fs2,
 )
 
 lazy val projectMap = allProjects.groupBy(_.project)

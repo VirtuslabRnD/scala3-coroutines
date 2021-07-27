@@ -530,6 +530,9 @@ object SourceCode {
       case Closure(meth, _) =>
         printTree(meth)
 
+      case _:Unapply | _:Alternatives | _:Bind =>
+        printPattern(tree)
+
       case _ =>
         throw new MatchError(tree.show(using Printer.TreeStructure))
 
@@ -1213,13 +1216,6 @@ object SourceCode {
         printList(tpe.paramNames.zip(tpe.paramBounds), ", ",
           (x: (String, TypeBounds)) => (this += x._1 += " ").printType(x._2))
         this += "]"
-        printType(tpe.resType)
-
-      case tpe: TypeLambda =>
-        this += "["
-        printList(tpe.paramNames.zip(tpe.paramBounds), ", ",
-          (x: (String, TypeBounds)) => (this += x._1 += " ").printType(x._2))
-        this += "] => "
         printType(tpe.resType)
 
       case tpe@TypeBounds(lo, hi) =>

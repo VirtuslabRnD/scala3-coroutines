@@ -634,7 +634,6 @@ class TreeUnpickler(reader: TastyReader,
         }
         nextByte match {
           case PRIVATE => addFlag(Private)
-          case INTERNAL => ??? // addFlag(Internal)
           case PROTECTED => addFlag(Protected)
           case ABSTRACT =>
             readByte()
@@ -882,11 +881,16 @@ class TreeUnpickler(reader: TastyReader,
       }
       goto(end)
       setSpan(start, tree)
-      if (!sym.isType) // Only terms might have leaky aliases, see the documentation of `checkNoPrivateLeaks`
+
+      // Dealias any non-accessible type alias in the type of `sym`. This can be
+      // skipped for types (see `checkNoPrivateLeaks` for why) as well as for
+      // param accessors since they can't refer to an inaccesible type member of
+      // the class.
+      if !sym.isType && !sym.is(ParamAccessor) then
         sym.info = ta.avoidPrivateLeaks(sym)
 
-      if (ctx.mode.is(Mode.ReadComments)) {
-        assert(ctx.docCtx.isDefined, "Mode is `ReadComments`, but no `docCtx` is set.")
+      if (ctx.settings.YreadComments.value) {
+        assert(ctx.docCtx.isDefined, "`-Yread-docs` enabled, but no `docCtx` is set.")
         commentUnpicklerOpt.foreach { commentUnpickler =>
           val comment = commentUnpickler.commentAt(start)
           ctx.docCtx.get.addDocstring(tree.symbol, comment)
@@ -1199,8 +1203,8 @@ class TreeUnpickler(reader: TastyReader,
                *  or an override has been removed.
                *
                *  This is tested in
-               *  - sbt-dotty/sbt-test/tasty-compat/remove-override
-               *  - sbt-dotty/sbt-test/tasty-compat/move-method
+               *  - sbt-test/tasty-compat/remove-override
+               *  - sbt-test/tasty-compat/move-method
                */
               def lookupInSuper =
                 val cls = ownerTpe.classSymbol

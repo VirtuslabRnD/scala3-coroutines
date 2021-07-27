@@ -18,9 +18,8 @@ class IdempotencyTests {
   import IdempotencyTests._
   import CompilationTest.aggregateTests
 
-  val filter = FileFilter.exclude(
-    s"pos${JFile.separator}i6507b"
-  )
+  // ignore flaky tests
+  val filter = FileFilter.NoFilter
 
   @Category(Array(classOf[SlowTests]))
   @Test def idempotency: Unit = {
