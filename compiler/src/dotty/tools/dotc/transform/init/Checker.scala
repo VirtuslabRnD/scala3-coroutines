@@ -23,8 +23,7 @@ class Checker extends MiniPhase {
 
   val phaseName = "initChecker"
 
-  // cache of class summary
-  private val cache = new Cache
+  private val semantic = new Semantic
 
   override val runsAfter = Set(Pickler.name)
 
@@ -47,17 +46,12 @@ class Checker extends MiniPhase {
 
     // A concrete class may not be instantiated if the self type is not satisfied
     if (instantiable && cls.enclosingPackageClass != defn.StdLibPatchesPackage.moduleClass) {
-      implicit val state: Checking.State = Checking.State(
-        visited = Set.empty,
-        path = Vector.empty,
-        thisClass = cls,
-        fieldsInited = mutable.Set.empty,
-        parentsInited = mutable.Set.empty,
-        safePromoted = mutable.Set.empty,
-        env = Env(ctx.withOwner(cls), cache)
-      )
-
-      Checking.checkClassBody(tree)
+      import semantic._
+      val tpl = tree.rhs.asInstanceOf[Template]
+      val thisRef = ThisRef(cls)
+      val heap = Objekt(cls, fields = mutable.Map.empty)
+      val res = eval(tpl, thisRef, cls)(using heap, ctx, Vector.empty)
+      res.errors.foreach(_.issue)
     }
 
     tree

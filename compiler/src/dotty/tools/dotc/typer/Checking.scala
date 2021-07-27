@@ -425,6 +425,7 @@ object Checking {
   /** Check that symbol's definition is well-formed. */
   def checkWellFormed(sym: Symbol)(using Context): Unit = {
     def fail(msg: Message) = report.error(msg, sym.srcPos)
+    def warn(msg: Message) = report.warning(msg, sym.srcPos)
 
     def checkWithDeferred(flag: FlagSet) =
       if (sym.isOneOf(flag))
@@ -464,8 +465,15 @@ object Checking {
       fail(em"only classes can be ${(sym.flags & ClassOnlyFlags).flagsString}")
     if (sym.is(AbsOverride) && !sym.owner.is(Trait))
       fail(AbstractOverrideOnlyInTraits(sym))
-    if (sym.is(Trait) && sym.is(Final))
-      fail(TraitsMayNotBeFinal(sym))
+    if sym.is(Trait) then
+      if sym.is(Final) then
+        fail(TraitsMayNotBeFinal(sym))
+      else if sym.is(Open) then
+        warn(RedundantModifier(Open))
+    if sym.isAllOf(Abstract | Open) then
+      warn(RedundantModifier(Open))
+    if sym.is(Open) && sym.isLocal then
+      warn(RedundantModifier(Open))
     // Skip ModuleVal since the annotation will also be on the ModuleClass
     if sym.hasAnnotation(defn.TailrecAnnot) then
       if !sym.isOneOf(Method | ModuleVal) then
@@ -954,7 +962,9 @@ trait Checking {
           def doubleDefError(decl: Symbol, other: Symbol): Unit =
             if (!decl.info.isErroneous && !other.info.isErroneous)
               report.error(DoubleDefinition(decl, other, cls), decl.srcPos)
-          if (decl is Synthetic) doubleDefError(other, decl)
+          if decl.name.is(DefaultGetterName) && ctx.reporter.errorsReported then
+            () // do nothing; we already have reported an error that overloaded variants cannot have default arguments
+          else if (decl is Synthetic) doubleDefError(other, decl)
           else doubleDefError(decl, other)
         }
         if decl.hasDefaultParams && other.hasDefaultParams then
@@ -980,18 +990,6 @@ trait Checking {
       else if (called.is(Trait) && !caller.mixins.contains(called))
         report.error(i"""$called is already implemented by super${caller.superClass},
                    |its constructor cannot be called again""", call.srcPos)
-
-      if (caller.is(Module)) {
-        val traverser = new TreeTraverser {
-          def traverse(tree: Tree)(using Context) = tree match {
-            case tree: RefTree if tree.isTerm && (tree.tpe.classSymbol eq caller) =>
-              report.error("super constructor cannot be passed a self reference", tree.srcPos)
-            case _ =>
-              traverseChildren(tree)
-          }
-        }
-        traverser.traverse(call)
-      }
 
       // Check that constructor call is of the form _.<init>(args1)...(argsN).
       // This guards against calls resulting from inserted implicits or applies.

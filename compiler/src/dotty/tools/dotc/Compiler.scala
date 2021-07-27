@@ -85,6 +85,7 @@ class Compiler {
          new ElimByName,             // Expand by-name parameter references
          new StringInterpolatorOpt) :: // Optimizes raw and s string interpolators by rewriting them to string concatenations
     List(new PruneErasedDefs,        // Drop erased definitions from scopes and simplify erased expressions
+         new UninitializedDefs,      // Replaces `compiletime.uninitialized` by `_`
          new InlinePatterns,         // Remove placeholders of inlined patterns
          new VCInlineMethods,        // Inlines calls to value class methods
          new SeqLiterals,            // Express vararg arguments as arrays
@@ -122,6 +123,7 @@ class Compiler {
          new ElimStaticThis,         // Replace `this` references to static objects by global identifiers
          new CountOuterAccesses) ::  // Identify outer accessors that can be dropped
     List(new DropOuterAccessors,     // Drop unused outer accessors
+         new CheckNoSuperThis,       // Check that supercalls don't contain references to `this`
          new Flatten,                // Lift all inner classes to package scope
          new RenameLifted,           // Renames lifted classes to local numbering scheme
          new TransformWildcards,     // Replace wildcards with default values

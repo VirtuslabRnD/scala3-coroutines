@@ -238,6 +238,7 @@ object TypeErasure {
 
     if (defn.isPolymorphicAfterErasure(sym)) eraseParamBounds(sym.info.asInstanceOf[PolyType])
     else if (sym.isAbstractType) TypeAlias(WildcardType)
+    else if sym.is(ConstructorProxy) then NoType
     else if (sym.isConstructor) outer.addParam(sym.owner.asClass, erase(tp)(using preErasureCtx))
     else if (sym.is(Label)) erase.eraseResult(sym.info)(using preErasureCtx)
     else erase.eraseInfo(tp, sym)(using preErasureCtx) match {
@@ -426,10 +427,6 @@ object TypeErasure {
    *  This operation has the following the properties:
    *  - Associativity and commutativity, because this method acts as the minimum
    *    of the total order induced by `compareErasedGlb`.
-   *  - Java compatibility: intersections that would be valid in Java code are
-   *    erased like javac would erase them (a Java intersection is composed of
-   *    exactly one class and one or more interfaces and always erases to the
-   *    class).
    */
   def erasedGlb(tp1: Type, tp2: Type)(using Context): Type =
     if compareErasedGlb(tp1, tp2) <= 0 then tp1 else tp2
@@ -608,7 +605,9 @@ class TypeErasure(sourceLanguage: SourceLanguage, semiEraseVCs: Boolean, isConst
     case tp: TypeProxy =>
       this(tp.underlying)
     case tp @ AndType(tp1, tp2) =>
-      if sourceLanguage.isScala2 then
+      if sourceLanguage.isJava then
+        this(tp1)
+      else if sourceLanguage.isScala2 then
         this(Scala2Erasure.intersectionDominator(Scala2Erasure.flattenedParents(tp)))
       else
         erasedGlb(this(tp1), this(tp2))
@@ -726,7 +725,7 @@ class TypeErasure(sourceLanguage: SourceLanguage, semiEraseVCs: Boolean, isConst
       //   erased like `Array[A]` as seen from its definition site, no matter
       //   the `X` (same if `A` is bounded).
       //
-      // The binary compatibility is checked by sbt-dotty/sbt-test/scala2-compat/i8001
+      // The binary compatibility is checked by sbt-test/scala2-compat/i8001
       val erasedValueClass =
         if erasedUnderlying.isPrimitiveValueType && !genericUnderlying.isPrimitiveValueType then
           defn.boxedType(erasedUnderlying)
@@ -821,10 +820,10 @@ class TypeErasure(sourceLanguage: SourceLanguage, semiEraseVCs: Boolean, isConst
         sigName(this(tp))
       case tp: TypeProxy =>
         sigName(tp.underlying)
-      case _: ErrorType | WildcardType | NoType =>
-        tpnme.WILDCARD
       case tp: WildcardType =>
-        sigName(tp.optBounds)
+        tpnme.Uninstantiated
+      case _: ErrorType | NoType =>
+        tpnme.ERROR
       case _ =>
         val erasedTp = this(tp)
         assert(erasedTp ne tp, tp)

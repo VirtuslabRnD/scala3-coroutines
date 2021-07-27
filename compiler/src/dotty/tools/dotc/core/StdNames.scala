@@ -133,6 +133,7 @@ object StdNames {
     val OPS_PACKAGE: N                = "<special-ops>"
     val OVERLOADED: N                 = "<overloaded>"
     val PACKAGE: N                    = "package"
+    val REPL_PACKAGE: N               = "repl$"
     val ROOT: N                       = "<root>"
     val SPECIALIZED_SUFFIX: N         = "$sp"
     val SUPER_PREFIX: N               = "super$"
@@ -659,6 +660,12 @@ object StdNames {
       final val SLASH: N  = "/"
       final val STAR : N  = "*"
       final val TILDE: N  = "~"
+
+      // kind-projector compat symbols
+      final val MINUS_STAR  : N = "-*"
+      final val PLUS_STAR   : N = "+*"
+      final val MINUS_USCORE: N = "-_"
+      final val PLUS_USCORE : N = "+_"
 
       final val isUnary: Set[Name] = Set(MINUS, PLUS, TILDE, BANG)
     }

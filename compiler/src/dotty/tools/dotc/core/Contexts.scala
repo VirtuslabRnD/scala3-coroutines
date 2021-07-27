@@ -526,6 +526,10 @@ object Contexts {
     final def withOwner(owner: Symbol): Context =
       if (owner ne this.owner) fresh.setOwner(owner) else this
 
+    final def withUncommittedTyperState: Context =
+      val ts = typerState.uncommittedAncestor
+      if ts ne typerState then fresh.setTyperState(ts) else this
+
     final def withProperty[T](key: Key[T], value: Option[T]): Context =
       if (property(key) == value) this
       else value match {
@@ -921,6 +925,9 @@ object Contexts {
     private[core] var nextDenotTransformerId: Array[Int] = _
 
     private[core] var denotTransformers: Array[DenotTransformer] = _
+
+    /** Flag to suppress inlining, set after overflow */
+    private[dotc] var stopInlining: Boolean = false
 
     // Reporters state
     private[dotc] var indent: Int = 0

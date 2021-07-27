@@ -160,13 +160,12 @@ class Synthesizer(typer: Typer)(using @constructorOnly c: Context):
 
     def success(t: Tree) =
       New(defn.ValueOfClass.typeRef.appliedTo(t.tpe), t :: Nil).withSpan(span)
-
     formal.argInfos match
       case arg :: Nil =>
         fullyDefinedType(arg.dealias, "ValueOf argument", span).normalized match
           case ConstantType(c: Constant) =>
             success(Literal(c))
-          case TypeRef(_, sym) if sym == defn.UnitClass =>
+          case tp: TypeRef if tp.isRef(defn.UnitClass) =>
             success(Literal(Constant(())))
           case n: TermRef =>
             success(ref(n))
@@ -219,6 +218,12 @@ class Synthesizer(typer: Typer)(using @constructorOnly c: Context):
       case _ => true
     loop(formal)
 
+  private def checkRefinement(formal: Type, name: TypeName, expected: Type, span: Span)(using Context): Unit =
+    val actual = formal.lookupRefined(name)
+    if actual.exists && !(expected =:= actual)
+    then report.error(
+      em"$name mismatch, expected: $expected, found: $actual.", ctx.source.atSpan(span))
+
   private def mkMirroredMonoType(mirroredType: HKTypeLambda)(using Context): Type =
     val monoMap = new TypeMap:
       def apply(t: Type) = t match
@@ -260,10 +265,13 @@ class Synthesizer(typer: Typer)(using @constructorOnly c: Context):
             case _ =>
               val elems = TypeOps.nestedPairs(accessors.map(mirroredType.memberInfo(_).widenExpr))
               (mirroredType, elems)
+          val elemsLabels = TypeOps.nestedPairs(elemLabels)
+          checkRefinement(formal, tpnme.MirroredElemTypes, elemsType, span)
+          checkRefinement(formal, tpnme.MirroredElemLabels, elemsLabels, span)
           val mirrorType =
             mirrorCore(defn.Mirror_ProductClass, monoType, mirroredType, cls.name, formal)
               .refinedWith(tpnme.MirroredElemTypes, TypeAlias(elemsType))
-              .refinedWith(tpnme.MirroredElemLabels, TypeAlias(TypeOps.nestedPairs(elemLabels)))
+              .refinedWith(tpnme.MirroredElemLabels, TypeAlias(elemsLabels))
           val mirrorRef =
             if (cls.is(Scala2x)) anonymousMirror(monoType, ExtendsProductMirror, span)
             else companionPath(mirroredType, span)

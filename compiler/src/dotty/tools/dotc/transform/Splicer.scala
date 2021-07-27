@@ -63,8 +63,10 @@ object Splicer {
       catch {
         case ex: CompilationUnit.SuspendException =>
           throw ex
-        case ex: scala.quoted.runtime.StopMacroExpansion if ctx.reporter.hasErrors =>
-           // errors have been emitted
+        case ex: scala.quoted.runtime.StopMacroExpansion =>
+          if !ctx.reporter.hasErrors then
+            report.error("Macro expansion was aborted by the macro without any errors reported. Macros should issue errors to end-users to facilitate debugging when aborting a macro expansion.", splicePos)
+          // errors have been emitted
           EmptyTree
         case ex: StopInterpretation =>
           report.error(ex.msg, ex.pos)
@@ -161,7 +163,7 @@ object Splicer {
         case SeqLiteral(elems, _) =>
           elems.foreach(checkIfValidArgument)
 
-        case tree: Ident if summon[Env].contains(tree.symbol) =>
+        case tree: Ident if summon[Env].contains(tree.symbol) || tree.symbol.is(Inline, butNot = Method) =>
           // OK
 
         case _ =>
@@ -172,6 +174,7 @@ object Splicer {
               |Parameters may only be:
               | * Quoted parameters or fields
               | * Literal values of primitive types
+              | * References to `inline val`s
               |""".stripMargin, tree.srcPos)
       }
 
@@ -241,6 +244,11 @@ object Splicer {
 
       case Literal(Constant(value)) =>
         interpretLiteral(value)
+
+      case tree: Ident if tree.symbol.is(Inline, butNot = Method) =>
+        tree.tpe.widenTermRefExpr match
+          case ConstantType(c) => c.value.asInstanceOf[Object]
+          case _ => throw new StopInterpretation(em"${tree.symbol} could not be inlined", tree.srcPos)
 
       // TODO disallow interpreted method calls as arguments
       case Call(fn, args) =>
@@ -540,4 +548,3 @@ object Splicer {
     }
   }
 }
-

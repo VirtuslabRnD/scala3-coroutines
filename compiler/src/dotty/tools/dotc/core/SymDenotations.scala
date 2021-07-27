@@ -432,8 +432,8 @@ object SymDenotations {
           TypeBounds.empty
 
       info match
-        case TypeAlias(alias) if isOpaqueAlias && owner.isClass =>
-          setAlias(alias)
+        case info: AliasingBounds if isOpaqueAlias && owner.isClass =>
+          setAlias(info.alias)
           HKTypeLambda.boundsFromParams(tparams, bounds(rhs))
         case _ =>
           info
@@ -1180,11 +1180,13 @@ object SymDenotations {
      */
     final def companionModule(using Context): Symbol =
       if (is(Module)) sourceModule
+      else if registeredCompanion.isAbsent() then NoSymbol
       else registeredCompanion.sourceModule
 
     private def companionType(using Context): Symbol =
       if (is(Package)) NoSymbol
       else if (is(ModuleVal)) moduleClass.denot.companionType
+      else if registeredCompanion.isAbsent() then NoSymbol
       else registeredCompanion
 
     /** The class with the same (type-) name as this module or module class,
@@ -1803,6 +1805,11 @@ object SymDenotations {
      */
     def baseClasses(implicit onBehalf: BaseData, ctx: Context): List[ClassSymbol] =
       baseData._1
+
+    /** Like `baseClasses.length` but more efficient. */
+    def baseClassesLength(using BaseData, Context): Int =
+      // `+ 1` because the baseClassSet does not include the current class unlike baseClasses
+      baseClassSet.classIds.length + 1
 
     /** A bitset that contains the superId's of all base classes */
     private def baseClassSet(implicit onBehalf: BaseData, ctx: Context): BaseClassSet =
