@@ -319,12 +319,18 @@ object Continuations:
     case _ => None
 
   /* === coroutines building blocks === */
-  private case class Node(init: Tree => Tree, rest: List[Tree], tpe: Type, id: Int):
+  private case class Node(init: Tree => Tree, rest: List[Tree], tpe: Type, id: Int)(/* TODO: REMOVE THIS HACK */ using Context) extends printing.Showable:
     def append(trees: List[Tree]) = if trees.nonEmpty then copy(rest = rest ++ trees, tpe = trees.last.tpe) else this
 
     def wrap(f: Tree => Tree)(using Context): Node =
       if rest.isEmpty then copy(init = r => f(init(r)))
       else copy(rest = f(Block(rest.init, rest.last)) :: Nil)
+
+    import printing.*, Texts._
+    def toText(printer: Printer): Text =
+      val sym = newSymbol(ctx.owner, "<|PLACEHOLDER|>".toTermName, Synthetic, NoType)
+      val mock = init(ref(sym))
+      (s"Node($id)[" ~ printer.toText(tpe) ~ "]{" ~ printer.toText(mock :: rest, "\n") ~ "}").close
 
 
   extension (body: List[Node])
