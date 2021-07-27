@@ -337,13 +337,19 @@ object Continuations:
     private def append(trees: List[Tree]) = body.init :+ body.last.append(trees)
 
 
-  private case class Coroutine(head: List[Tree], body: List[Node]):
+  private case class Coroutine(head: List[Tree], body: List[Node]) extends printing.Showable:
     def prepend(trees: List[Tree]) = copy(head = trees ++ head)
     def append(trees: List[Tree]) = copy(body = body.append(trees))
+
+    import printing.*, Texts._
+    def toText(printer: Printer): Text =
+      val headText: Text = ("Head{" ~ printer.toText(head, "\n") ~ "}").close
+      (s"Coroutine{" ~ headText ~ printer.toText(body, "\n") ~ "}").close
 
   private object Coroutine:
     def suspension(tpe: Type, state: Int)(using Context): Coroutine =
       Coroutine(Nil, Node(r => r.asInstance(tpe), Nil, tpe, state) :: Nil)
+
 
   private type Trees = Tree | List[Tree]
   private type PreCoroutine = Coroutine | Trees
@@ -396,4 +402,3 @@ object Continuations:
     private def nodes: List[Node] = left match
       case l: Coroutine => l.body
       case tt: Trees => Nil
-
