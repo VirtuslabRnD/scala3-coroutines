@@ -239,44 +239,41 @@ object Continuations:
 
     // call other coroutine
     case Apply(Select(Apply(call, args), _), _ :: Nil) if findContext(call.symbol.info).isDefined =>
-      val argsLifted = (call.symbol.info.paramInfoss.head zip args).map(analyzeWithLift(_)(_))
+      val argsLifts = (call.symbol.info.paramInfoss.head zip args).map(analyzeWithLift(_)(_))
       val newCall = ref(call.symbol.owner.info.member(call.symbol.name ++ "$coroutine").symbol) // TODO: this doesn't seem to be super reliable
-      val precoroutine = argsLifted.collect { case Lift(Some(c), _) => c }.fold(PreCoroutine.empty)(_ combine _)
       val newState = lifter.newState
-      val combined = precoroutine combine cpy.Apply(tree)(newCall.appliedToArgs(argsLifted.map(_.tree)), lifter.executrorRef :: Nil)
+      val combined = argsLifts.allLifted combine cpy.Apply(tree)(newCall.appliedToArgs(argsLifts.map(_.reference)), lifter.executrorRef :: Nil)
       combined.simplifyOrWrap(lifter.markStackPush(newState)) combine Coroutine.suspension(tree.tpe, newState)
 
     // trees that can suspend in different subtrees:
     case Apply(call, args) =>
       val callLift = analyzeWithLift(NoType)(call)
       val argLifts = (call.symbol.info.paramInfoss.head zip args).map(analyzeWithLift(_)(_))
-      val precoroutine = (callLift :: argLifts).collect { case Lift(Some(c), _) => c }.fold(PreCoroutine.empty)(_ combine _)
-      (precoroutine combine cpy.Apply(tree)(fun = callLift.tree, args = argLifts.map(_.tree)))
+      if argLifts.forall(_.isSimple) then
+        callLift.unlifted.simplifyOrWrap(c => cpy.Apply(tree)(c, argLifts.references))
+      else
+        (callLift :: argLifts).allLifted combine cpy.Apply(tree)(callLift.reference, argLifts.references)
 
-    case SeqLiteral(elems, tpe) =>
-      val lifts = elems.map(analyzeWithLift(tpe.tpe))
-      val precoroutine = lifts.collect { case Lift(Some(c), _) => c }.fold(PreCoroutine.empty)(_ combine _)
-      precoroutine combine cpy.SeqLiteral(tree)(lifts.map(_.tree), tpe)
+    case SeqLiteral(elems, tpt) =>
+      val lifts = elems.map(analyzeWithLift(tpt.tpe))
+      lifts.allLifted combine cpy.SeqLiteral(tree)(lifts.references, tpt)
 
     // trees that can branch and needs more complex logic:
     case If(cond, thenp, elsep) =>
-      val condLift = analyzeWithLift(defn.BooleanType)(cond)
-      val tail = (analyze(tpe)(thenp), analyze(tpe)(elsep)) match
-        case (thent: Trees, elset: Trees) => cpy.If(tree)(condLift.tree, thent.toTree, elset.toTree)
+      val condpc = analyze(defn.BooleanType)(cond)
+      (analyze(tpe)(thenp), analyze(tpe)(elsep)) match
+        case (thent: Trees, elset: Trees) => condpc.simplifyOrWrap(i => cpy.If(tree)(i, thent.toTree, elset.toTree))
         case (thenpc, elsepc) =>
           val newState = lifter.newState
           val sym = lifter.make(tpe orElse tree.tpe)
           def lift(pc: PreCoroutine) = pc.simplifyOrWrap(Assign(ref(sym), _)) combine Literal(Constant(newState))
           val thenl = lift(thenpc)
           val elsel = lift(elsepc)
-          cpy.If(tree)(condLift.tree, thenl.head.toTree, elsel.head.toTree) combine
+          condpc.simplifyOrWrap(i => cpy.If(tree)(i, thenl.head.toTree, elsel.head.toTree)) combine
             thenl.body combine
             elsel.body combine
             Coroutine(Nil, Node(_ => ref(sym), Nil, tree.tpe, newState) :: Nil)
 
-      condLift.coroutine match
-        case Some(head) => head combine tail
-        case None => tail
 
     // may be lcoal reference that was lifted
     case t: Ident =>
@@ -294,17 +291,24 @@ object Continuations:
       tree
 
 
-  private case class Lift(coroutine: Option[Coroutine], tree: Tree)
+  private class Lift(val unlifted: PreCoroutine, tpe: Type)(using LiftState, Context):
+    def isSimple = unlifted.isInstanceOf[Trees]
 
-  private def analyzeWithLift(tpe: Type)(tree: Tree)(using LiftState, Context): Lift =
-    analyze(tpe)(tree) match
-      case t: Tree => Lift(None, t)
-      case tt: List[Tree] => Lift(None, tt.toTree)
+    lazy val (lifted: PreCoroutine, reference: Tree) = unlifted match
+      case t: Tree => PreCoroutine.empty -> t
+      case tt: List[Tree] => PreCoroutine.empty -> tt.toTree
       case Coroutine(head, nodes :+ last) =>
         val sym = lifter.make(tpe orElse last.tpe)
         val wrapped = last.wrap(Assign(ref(sym), _))
-        Lift(Some(Coroutine(head, nodes :+ wrapped)), ref(sym))
+        Coroutine(head, nodes :+ wrapped) -> ref(sym)
       case Coroutine(_, _) => throw AssertionError("Empty coroutine should never be constructed")
+
+  extension (ll: List[Lift])
+    private def references: List[Tree] = ll.map(_.reference)
+    private def allLifted: PreCoroutine = ll.map(_.lifted).fold(PreCoroutine.empty)(_ combine _)
+
+  private def analyzeWithLift(tpe: Type)(tree: Tree)(using LiftState, Context): Lift = Lift(analyze(tpe)(tree), tpe)
+
 
   /* === Context extraction === */
   case class CInfo(namess: List[List[TermName]], argss: List[List[Type]], executor: Type, result: Type):
