@@ -18,6 +18,7 @@ import typer.Inliner
 import dotty.tools.dotc.core.Names.TermName
 import dotty.tools.dotc.core.Names.TermName
 import dotty.tools.dotc.util.Property
+import dotty.tools.dotc.ast.Trees
 
 object Continuations:
   private val CoroutineDefInfo = Property.StickyKey[(DefDef, Type)]
@@ -88,7 +89,7 @@ object Continuations:
 
       given lifter: LiftState = LiftState(typePrefix, cls, params)
       val analysis = analyze(answerType)(rhs).simplifyOrWrap(lifter.markStackPop)
-      val vars = lifter.symbols.map(s => ValDef(s))
+      val vars = lifter.liftedTrees
 
 
       val gotoSym = newSymbol(
@@ -172,28 +173,40 @@ object Continuations:
 
     private var states: Int = 0
     private var counter: Int = 0
-    var symbols: List[TermSymbol] = Nil
+    private var rhses: Map[Symbol, Tree] = Map.empty
+    private var symbols: List[TermSymbol] = Nil
     private val lifted = mutable.Map[Symbol, Symbol]()
+
+    private val functionFlags = Synthetic | Private | Method
+    private val fieldFlags = Synthetic | Private | Mutable
 
     def make(tpe: Type, original: Symbol = NoSymbol)(using Context): TermSymbol =
       val suffix = if original == NoSymbol then "" else "_$" + original.name.toString
-      val expanded: Type = tpe match
-        case ExprType(inner) => defn.FunctionOf(Nil, inner)
-        case MethodTpe(_, args, res) => defn.FunctionOf(args, res)
-        case _ => tpe
+      val (flags: FlagSet, symType: Type) = tpe match
+        case m: MethodType => functionFlags -> m.termSymbol
+        case ExprType(result) => functionFlags -> MethodType(Nil, Nil, result)
+        case _ => fieldFlags -> tpe
+
       val sym = newSymbol(
         owner = cls,
         name = ("$lift_" + counter + suffix).toTermName,
-        flags = Synthetic | Private | Mutable,
-        info = expanded
+        flags = flags,
+        info = symType
       ).entered.asTerm
       counter += 1
       symbols = sym :: symbols
+
       if original != NoSymbol then lifted += (original -> sym)
       sym
 
+    def addRhs(sym: Symbol, rhs: Tree) = rhses = rhses.updated(sym, rhs)
+
     def translateRef(tree: Tree): Tree =
-      params.get(tree.symbol) orElse lifted.get(tree.symbol).map(ref(_)) getOrElse tree
+      def local(sym: Symbol): Option[Tree] = lifted.get(sym).map { s => sym.info match
+        case ExprType(_) => ref(s).appliedToNone
+        case _ => ref(s)
+      }
+      params.get(tree.symbol) orElse local(tree.symbol) getOrElse tree
 
     def newState =
       states += 1
@@ -208,6 +221,11 @@ object Continuations:
       stackPush.appliedTo(tree, Literal(Constant(to)))
 
     def executrorRef(using Context) = ref(typePrefix)
+
+    def liftedTrees: List[Tree] = symbols.map { s => rhses.get(s) match
+      case Some(rhs) => DefDef(s, rhs)
+      case _ => ValDef(s)
+    }
   end LiftState
 
   private def lifter(using l: LiftState) = l
@@ -229,6 +247,13 @@ object Continuations:
     case v: ValDef =>
       val sym = lifter.make(v.symbol.info, v.symbol)
       analyze(sym.info)(v.rhs).simplifyOrWrap(t => cpy.Assign(v)(lhs = ref(sym), rhs = t))
+
+    case d: DefDef =>
+      val sym = lifter.make(d.symbol.info, d.symbol)
+      analyze(sym.info.resultType)(d.rhs) match
+        case t: Trees => lifter.addRhs(sym, t.toTree)
+        case _ => report.error("Suspending in nested functions is not yet supported", d.srcPos)
+      PreCoroutine.empty
 
     // suspend - create the new coroutine:
     case Apply(call, arg :: Nil) if call.symbol.owner == defn.ContinuationContext && call.symbol.name.toString == "suspend" =>
@@ -273,7 +298,6 @@ object Continuations:
             thenl.body combine
             elsel.body combine
             Coroutine(Nil, Node(_ => ref(sym), Nil, tree.tpe, newState) :: Nil)
-
 
     // may be lcoal reference that was lifted
     case t: Ident =>
