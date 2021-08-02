@@ -171,27 +171,37 @@ object Continuations:
     private val stackPush = stackChMod.select("Push".toTermName).select(nme.apply)
     private val progress = stackChMod.select("Progress".toTermName).select(nme.apply)
 
+    val extractT = TypeRef(typePrefix, "Extract".toTypeName)
+
     private var states: Int = 0
     private var counter: Int = 0
     private var rhses: Map[Symbol, Tree] = Map.empty
     private var symbols: List[TermSymbol] = Nil
     private val lifted = mutable.Map[Symbol, Symbol]()
 
-    private val functionFlags = Synthetic | Private | Method
-    private val fieldFlags = Synthetic | Private | Mutable
+    def makeMethod(original: Symbol, rhs: Tree)(using Context) =
+      val tpe = original.info match
+        case m: MethodType => m
+        case ExprType(result) => MethodType(Nil, Nil, result)
+        case _ =>
+          report.error("Unsupported method type in the coroutine", original.defTree.srcPos)
+          NoType
+      val sym = createSymbol(Synthetic | Private | Method, tpe, original)
+      addRhs(sym, rhs)
 
     def make(tpe: Type, original: Symbol = NoSymbol)(using Context): TermSymbol =
-      val suffix = if original == NoSymbol then "" else "_$" + original.name.toString
-      val (flags: FlagSet, symType: Type) = tpe match
-        case m: MethodType => functionFlags -> m.termSymbol
-        case ExprType(result) => functionFlags -> MethodType(Nil, Nil, result)
-        case _ => fieldFlags -> tpe
+      val symTpe = tpe match
+        case MethodTpe(_, args, res) => defn.FunctionOf(args, res)
+        case t => t
+      createSymbol(Synthetic | Private | Mutable, symTpe, original)
 
+    private def createSymbol(flags: FlagSet, tpe: Type, original: Symbol)(using Context): TermSymbol =
+      val suffix = if original == NoSymbol then "" else "_$" + original.name.toString
       val sym = newSymbol(
         owner = cls,
         name = ("$lift_" + counter + suffix).toTermName,
         flags = flags,
-        info = symType
+        info = tpe
       ).entered.asTerm
       counter += 1
       symbols = sym :: symbols
@@ -249,17 +259,15 @@ object Continuations:
       analyze(sym.info)(v.rhs).simplifyOrWrap(t => cpy.Assign(v)(lhs = ref(sym), rhs = t))
 
     case d: DefDef =>
-      val sym = lifter.make(d.symbol.info, d.symbol)
-      analyze(sym.info.resultType)(d.rhs) match
-        case t: Trees => lifter.addRhs(sym, t.toTree)
+      analyze(d.symbol.info.resultType)(d.rhs) match
+        case t: Trees => lifter.makeMethod(d.symbol, t.toTree)
         case _ => report.error("Suspending in nested functions is not yet supported", d.srcPos)
       PreCoroutine.empty
 
     // suspend - create the new coroutine:
     case Apply(call, arg :: Nil) if call.symbol.owner == defn.ContinuationContext && call.symbol.name.toString == "suspend" =>
       val newState = lifter.newState
-      val extractT = call.symbol.info.paramInfoss.head.head
-      val left = analyze(extractT)(arg).simplifyOrWrap(lifter.markProgress(newState))
+      val left = analyze(lifter.extractT)(arg).simplifyOrWrap(lifter.markProgress(newState))
       left combine Coroutine.suspension(tree.tpe, newState)
 
     // call other coroutine
@@ -272,12 +280,12 @@ object Continuations:
 
     // trees that can suspend in different subtrees:
     case Apply(call, args) =>
-      val callLift = analyzeWithLift(NoType)(call)
+      val callLift = analyzeWithLift(call.tpe.widen)(call)
       val argLifts = (call.symbol.info.paramInfoss.head zip args).map(analyzeWithLift(_)(_))
       if argLifts.forall(_.isSimple) then
         callLift.unlifted.simplifyOrWrap(c => cpy.Apply(tree)(c, argLifts.references))
       else
-        (callLift :: argLifts).allLifted combine cpy.Apply(tree)(callLift.reference, argLifts.references)
+        callLift.lifted combine argLifts.allLifted combine cpy.Apply(tree)(callLift.reference, argLifts.references)
 
     case SeqLiteral(elems, tpt) =>
       val lifts = elems.map(analyzeWithLift(tpt.tpe))
@@ -286,18 +294,19 @@ object Continuations:
     // trees that can branch and needs more complex logic:
     case If(cond, thenp, elsep) =>
       val condpc = analyze(defn.BooleanType)(cond)
-      (analyze(tpe)(thenp), analyze(tpe)(elsep)) match
+      val commonTpe = tpe orElse TypeComparer.lub(thenp.tpe, elsep.tpe).widenIfUnstable
+      (analyze(commonTpe)(thenp), analyze(commonTpe)(elsep)) match
         case (thent: Trees, elset: Trees) => condpc.simplifyOrWrap(i => cpy.If(tree)(i, thent.toTree, elset.toTree))
         case (thenpc, elsepc) =>
           val newState = lifter.newState
-          val sym = lifter.make(tpe orElse tree.tpe)
+          val sym = lifter.make(commonTpe)
           def lift(pc: PreCoroutine) = pc.simplifyOrWrap(Assign(ref(sym), _)) combine Literal(Constant(newState))
           val thenl = lift(thenpc)
           val elsel = lift(elsepc)
           condpc.simplifyOrWrap(i => cpy.If(tree)(i, thenl.head.toTree, elsel.head.toTree)) combine
-            thenl.body combine
-            elsel.body combine
-            Coroutine(Nil, Node(_ => ref(sym), Nil, tree.tpe, newState) :: Nil)
+            thenl.headless combine
+            elsel.headless combine
+            Coroutine(Nil, Node(_ => ref(sym), Nil, commonTpe, newState) :: Nil)
 
     // may be lcoal reference that was lifted
     case t: Ident =>
@@ -323,8 +332,10 @@ object Continuations:
       case tt: List[Tree] => PreCoroutine.empty -> tt.toTree
       case Coroutine(head, nodes :+ last) =>
         val sym = lifter.make(tpe orElse last.tpe)
-        val wrapped = last.wrap(Assign(ref(sym), _))
-        Coroutine(head, nodes :+ wrapped) -> ref(sym)
+        val wrapped = tpe match
+          case m: MethodType => last.wrap(t => Assign(ref(sym), Lambda(m, args => t.appliedToArgs(args))))
+          case _ => last.wrap(Assign(ref(sym), _))
+        Coroutine(head, nodes :+ wrapped) -> (if tpe.isInstanceOf[MethodType] then ref(sym).select(nme.apply) else ref(sym))
       case Coroutine(_, _) => throw AssertionError("Empty coroutine should never be constructed")
 
   extension (ll: List[Lift])
@@ -428,7 +439,7 @@ object Continuations:
       case l: Coroutine => l.head
       case tt: Trees => tt.toList
 
-    private def body: PreCoroutine = left match
+    private def headless: PreCoroutine = left match
       case l: Coroutine => l.copy(head = Nil)
       case tt: Trees => Nil
 
