@@ -308,7 +308,7 @@ object Continuations:
     // trees that can suspend in different subtrees:
     case Apply(call, args) =>
       val callLift = analyzeWithLift(call.tpe.widen)(call)
-      val argLifts = (call.symbol.info.paramInfoss.head zip args).map(analyzeWithLift(_)(_))
+      val argLifts = (call.tpe.widenDealias.paramInfoss.head zip args).map(analyzeWithLift(_)(_))
       if argLifts.forall(_.isSimple) then
         callLift.unlifted.simplifyOrWrap(c => cpy.Apply(tree)(c, argLifts.references))
       else
