@@ -1,9 +1,9 @@
 import scala.continuations.*
 
 // TODO: This broke for some reason
-inline def fill[A](n: Int)(a: A)(using FailingWith[String]#C): Seq[A] FailWith String = 
+inline def fill[A](n: Int)(a: A): Seq[A] FailWith String =
   if n >= 0 then
-    Seq.fill(n)(a) 
+    Seq.fill(n)(a)
   else
     fail("Cannot repeat an element a negative number of times")
 

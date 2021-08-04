@@ -3,9 +3,6 @@ import scala.continuations.*
 
 inline def success[R](right: => R): R FailWith String = Right(right).extract
 
-extension (i: Int)
-  def assertOdd: Int FailWith String = if i % 2 == 1 then i else fail("Not odd")
-
 object SucceedingExtractor1:
   def unapply(n: Int)(using FailingWith[String]#C): Option[Int] =
     val s = Some(n)
