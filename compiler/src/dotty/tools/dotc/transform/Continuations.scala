@@ -279,7 +279,6 @@ object Continuations:
     case Typed(expr, tpt) => analyze(tpt.tpe)(expr).simplifyOrWrap(cpy.Typed(tree)(_, tpt))
     case Select(qual, name) => analyze(NoType)(qual).simplifyOrWrap(cpy.Select(tree)(_, name))
     case TypeApply(fn, args) => analyze(NoType)(fn).simplifyOrWrap(cpy.TypeApply(tree)(_, args))
-    case New(tp) => cpy.New(tree)(tp)
 
     // always lifted:
     case v: ValDef =>
@@ -340,7 +339,6 @@ object Continuations:
       val newState = lifter.newState
       val sym = lifter.make(tpe)
       lifter.rememberLabel(bind.name, newState, sym)
-      val exprLift = analyzeWithLift(tpe)(expr)
       analyze(tpe)(expr) combine Coroutine(Nil, Node(_ => ref(sym), Nil, tree.tpe, newState) :: Nil)
 
     // We don't jump out of a state of a coroutine unless we jump out of the coroutine altogether
@@ -348,14 +346,9 @@ object Continuations:
       from match
         case Ident(labelName) if lifter.hasLabel(labelName) =>
           val (labelReturnStateId, labelReturnValSym) = lifter.labelStateWithSym(labelName)
-          val foo = analyze(labelReturnValSym.info)(expr) match
-            case tt: Trees => Assign(ref(labelReturnValSym), tt.toTree)
-            case coroutine: Coroutine =>
-              coroutine.mapLastNode { n =>
-                n.wrap(Assign(ref(labelReturnValSym), _))
-              }
-          val bar = cpy.Return(tree)(Literal(Constant(labelReturnStateId)), ref(lifter.gotoSym))
-          foo combine bar
+          val body = analyze(labelReturnValSym.info)(expr).simplifyOrWrap(Assign(ref(labelReturnValSym), _))
+          val ret = cpy.Return(tree)(Literal(Constant(labelReturnStateId)), ref(lifter.gotoSym))
+          body combine ret
         case _ => analyze(NoType)(expr).simplifyOrWrap(cpy.Return(tree)(_, from)) // TODO handle subcases?
 
     // may be local reference that was lifted
@@ -363,6 +356,7 @@ object Continuations:
       lifter.translateRef(t)
 
     // do not need transformations:
+    case _: New => tree
     case _: Literal  => tree
     case EmptyTree => tree
 
