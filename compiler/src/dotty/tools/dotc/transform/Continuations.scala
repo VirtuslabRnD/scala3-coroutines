@@ -268,6 +268,9 @@ object Continuations:
   private def lifter(using l: LiftState) = l
 
   private def analyze(tpe: Type)(tree: Tree)(using LiftState, Context): PreCoroutine = tree match
+    // TODO: for now we do not support suspending in nested functions so it should be sufficient
+    case Block((_: DefDef) :: Nil, Closure(Nil, _, _)) => tree
+
     // blocks:
     case Block(stats, expr) =>
       val statsp = stats.map(analyze(NoType))
@@ -307,12 +310,6 @@ object Continuations:
 
     // trees that can suspend in different subtrees:
     case Apply(call, args) =>
-      if call.tpe.widen.paramInfoss.isEmpty then
-        borkeh(tree)
-        borkeh(call.symbol)
-        brorkeh(args)
-        borkeh(call.tpe.widen)
-        System exit -1
       val callLift = analyzeWithLift(call.tpe.widen)(call)
       val argLifts = (call.tpe.widenDealias.paramInfoss.head zip args).map(analyzeWithLift(_)(_))
       if argLifts.forall(_.isSimple) then
@@ -356,6 +353,10 @@ object Continuations:
           val ret = cpy.Return(tree)(Literal(Constant(labelReturnStateId)), ref(lifter.gotoSym))
           body combine ret
         case _ => analyze(NoType)(expr).simplifyOrWrap(cpy.Return(tree)(_, from)) // TODO handle subcases?
+
+    case Closure(env, meth, tpt) =>
+      val envLifts = env.map(analyzeWithLift(NoType))
+      envLifts.allLifted combine analyze(NoType)(meth).simplifyOrWrap(cpy.Closure(tree)(envLifts.references, _, tpt))
 
     // may be local reference that was lifted
     case t: Ident =>
