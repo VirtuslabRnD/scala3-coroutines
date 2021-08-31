@@ -42,6 +42,7 @@ object Continuations:
         case Some(c) => Thicket(c, tree)
         case _ => tree
   end CoroutineStubs
+
   class Transform extends MiniPhase with IdentityDenotTransformer:
     thisPhase =>
     def phaseName = "continuations"
@@ -95,7 +96,7 @@ object Continuations:
         owner = cls,
         name = "goto".toTermName,
         flags = Method | Private | Synthetic,
-        info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), defn.IntType :: extractT :: Nil, gotoResultTpe)
+        info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), defn.IntType :: defn.AnyType :: Nil, gotoResultTpe)
       ).asTerm.entered
 
       given lifter: LiftState = LiftState(typePrefix, cls, params, gotoSym)
@@ -118,7 +119,7 @@ object Continuations:
         owner = cls,
         name = "dispatch".toTermName,
         flags = Method | Private | Synthetic,
-        info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), defn.IntType :: extractT :: Nil, stackChT)
+        info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), defn.IntType :: defn.AnyType :: Nil, stackChT)
       ).asTerm.entered
 
       def dispatchRhs(argss: List[List[Tree]]): Tree =
@@ -135,7 +136,7 @@ object Continuations:
         val ifTrue = ref(stateOrIdSym).select(defn.Any_asInstanceOf).appliedToType(stackChT)
         val ifFalse = ref(dispatchSym).appliedTo(
           ref(stateOrIdSym).select(defn.Any_asInstanceOf).appliedToType(defn.IntType),
-          Literal(Constant(null)).asInstance(extractT)
+          Literal(Constant(null))
         )
         val ifExpr = If(cond, ifTrue, ifFalse)
         Block(List(resultValDef), ifExpr)
@@ -150,12 +151,12 @@ object Continuations:
         flags = Synthetic | Method | Final | Override | Protected
       ).asTerm.entered
 
-      val startRhs = ref(dispatchSym).appliedTo(Literal(Constant(0)), Literal(Constant(null)).asInstance(extractT))
+      val startRhs = ref(dispatchSym).appliedTo(Literal(Constant(0)), Literal(Constant(null)))
       val startTree = DefDef(startSym, startRhs)
 
       val resumeSym = defn.Coroutine_resume.copy(
         owner = cls,
-        info = MethodType(("stateId" :: "t" :: Nil).map(_.toTermName), defn.IntType :: extractT :: Nil, stackChT),
+        info = MethodType(("stateId" :: "extract" :: Nil).map(_.toTermName), defn.IntType :: defn.AnyType :: Nil, stackChT),
         flags = Synthetic | Method | Final | Override | Protected
       ).asTerm.entered
       def resumeRhs(argss: List[List[Tree]]): Tree =
@@ -481,7 +482,7 @@ object Continuations:
 
   private object Coroutine:
     def suspension(tpe: Type, state: Int)(using Context): Coroutine =
-      Coroutine(Nil, Node(r => r.asInstance(tpe), Nil, tpe, state) :: Nil)
+      Coroutine(Nil, Node(r => if tpe <:< defn.NothingType then EmptyTree else r.asInstance(tpe), Nil, tpe, state) :: Nil)
 
 
   private type Trees = Tree | List[Tree]
